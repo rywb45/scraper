@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Lead Scraper{% endblock %}
+{% block content %}
+<h2>Dashboard</h2>
+
+<div class="stat-grid" id="stats">
+    <div class="stat-card"><div class="stat-value" id="total-companies">—</div><div class="stat-label">Companies</div></div>
+    <div class="stat-card"><div class="stat-value" id="total-contacts">—</div><div class="stat-label">Contacts</div></div>
+    <div class="stat-card"><div class="stat-value" id="total-jobs">—</div><div class="stat-label">Total Jobs</div></div>
+    <div class="stat-card"><div class="stat-value" id="active-jobs">—</div><div class="stat-label">Active Jobs</div></div>
+</div>
+
+<div class="grid-2">
+    <section>
+        <h4>Companies by Industry</h4>
+        <div class="bar-chart" id="industry-chart"></div>
+    </section>
+    <section>
+        <h4>Recent Jobs</h4>
+        <table>
+            <thead><tr><th>Name</th><th>Status</th><th>Companies</th><th>Date</th></tr></thead>
+            <tbody id="recent-jobs"></tbody>
+        </table>
+    </section>
+</div>
+
+<section>
+    <h4>Recently Added Companies</h4>
+    <table>
+        <thead><tr><th>Name</th><th>Domain</th><th>Industry</th><th>State</th><th>Added</th></tr></thead>
+        <tbody id="recent-companies"></tbody>
+    </table>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/dashboard.js"></script>
+{% endblock %}

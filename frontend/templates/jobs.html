@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Scrape Jobs - Lead Scraper{% endblock %}
+{% block content %}
+<div style="display:flex;justify-content:space-between;align-items:center">
+    <h2>Scrape Jobs</h2>
+    <a href="/jobs/new" role="button" style="width:auto">New Job</a>
+</div>
+
+<table>
+    <thead>
+        <tr>
+            <th>Name</th><th>Type</th><th>Status</th><th>Progress</th>
+            <th>Companies</th><th>Contacts</th><th>Errors</th><th>Created</th>
+        </tr>
+    </thead>
+    <tbody id="jobs-body"></tbody>
+</table>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/jobs.js"></script>
+{% endblock %}

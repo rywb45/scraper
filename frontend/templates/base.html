@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Lead Scraper{% endblock %}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+    <nav class="container-fluid">
+        <ul>
+            <li><strong>Lead Scraper</strong></li>
+        </ul>
+        <ul>
+            <li><a href="/" {% if request.url.path == "/" %}class="active"{% endif %}>Dashboard</a></li>
+            <li><a href="/companies" {% if "/companies" in request.url.path %}class="active"{% endif %}>Companies</a></li>
+            <li><a href="/jobs" {% if "/jobs" in request.url.path %}class="active"{% endif %}>Jobs</a></li>
+        </ul>
+    </nav>
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+    <script src="/static/js/app.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

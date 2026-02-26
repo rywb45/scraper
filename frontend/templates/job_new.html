@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}New Scrape Job - Lead Scraper{% endblock %}
+{% block content %}
+<p><a href="/jobs">&larr; Back to Jobs</a></p>
+<h2>New Scrape Job</h2>
+
+<form id="job-form">
+    <label>Job Name
+        <input type="text" id="job-name" placeholder="e.g., Aerospace Q1 Discovery" required>
+    </label>
+
+    <label>Job Type
+        <select id="job-type">
+            <option value="full">Full (Discovery + Enrichment)</option>
+            <option value="discovery">Discovery Only</option>
+            <option value="enrichment">Contact Enrichment Only</option>
+        </select>
+    </label>
+
+    <fieldset>
+        <legend>Target Industries</legend>
+        <div class="checkbox-grid" id="industries-grid"></div>
+    </fieldset>
+
+    <button type="submit">Create Job</button>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/job-new.js"></script>
+{% endblock %}

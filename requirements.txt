@@ -1,0 +1,32 @@
+# Web framework
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.18
+
+# Templates
+jinja2==3.1.4
+
+# Database
+sqlalchemy==2.0.36
+aiosqlite==0.20.0
+greenlet==3.1.1
+
+# Pydantic & Settings
+pydantic==2.10.3
+pydantic-settings==2.7.0
+
+# HTTP client (async)
+httpx==0.28.1
+
+# HTML parsing
+beautifulsoup4==4.12.3
+lxml==5.3.0
+
+# SERP API
+google-search-results==2.4.2
+
+# Email validation
+email-validator==2.2.0
+
+# Environment
+python-dotenv==1.0.1

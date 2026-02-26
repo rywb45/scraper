@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Companies - Lead Scraper{% endblock %}
+{% block content %}
+<h2>Companies</h2>
+
+<div class="filter-bar">
+    <input type="search" id="search" placeholder="Search companies..." style="max-width:300px">
+    <select id="filter-industry"><option value="">All Industries</option></select>
+    <select id="filter-state"><option value="">All States</option></select>
+    <button id="btn-export" class="secondary outline" style="width:auto">Export CSV</button>
+</div>
+
+<table>
+    <thead>
+        <tr>
+            <th class="sortable" data-sort="name">Name</th>
+            <th class="sortable" data-sort="domain">Domain</th>
+            <th class="sortable" data-sort="industry">Industry</th>
+            <th class="sortable" data-sort="state">State</th>
+            <th>Contacts</th>
+            <th class="sortable" data-sort="created_at">Added</th>
+        </tr>
+    </thead>
+    <tbody id="companies-body"></tbody>
+</table>
+
+<div class="pagination" id="pagination"></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/companies.js"></script>
+{% endblock %}

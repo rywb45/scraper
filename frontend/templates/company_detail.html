@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Company Detail - Lead Scraper{% endblock %}
+{% block content %}
+<p><a href="/companies">&larr; Back to Companies</a></p>
+<h2 id="company-name">Loading...</h2>
+
+<div class="grid-2">
+    <section>
+        <h4>Company Information</h4>
+        <table id="company-info"></table>
+    </section>
+    <section>
+        <h4>Contacts <span id="contact-count"></span></h4>
+        <table>
+            <thead><tr><th>Name</th><th>Title</th><th>Email</th><th>Confidence</th><th>Phone</th></tr></thead>
+            <tbody id="contacts-body"></tbody>
+        </table>
+    </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>const COMPANY_ID = {{ company_id }};</script>
+<script src="/static/js/company-detail.js"></script>
+{% endblock %}
