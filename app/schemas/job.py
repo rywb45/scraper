@@ -7,6 +7,7 @@ class JobCreate(BaseModel):
     name: str
     job_type: str = "full"  # discovery, enrichment, full
     industries: list[str] = []
+    sources: list[str] = []  # google, thomasnet, kompass, industrynet (empty = all)
     config: dict = {}
 
 

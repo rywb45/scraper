@@ -65,9 +65,11 @@ async def _run_job(job_id: int):
         try:
             industries = json.loads(job.industries or "[]")
             job_type = job.job_type or "full"
+            config = json.loads(job.config or "{}")
+            sources = config.get("sources", [])  # empty = all sources
 
             if job_type in ("discovery", "full"):
-                await _phase_discovery(db, job_id, industries)
+                await _phase_discovery(db, job_id, industries, sources)
 
             # For enrichment-only jobs, run batch enrichment on existing companies
             if job_type == "enrichment":
@@ -91,8 +93,24 @@ async def _run_job(job_id: int):
             await job_service.add_log(db, job_id, "error", f"Job failed: {e}")
 
 
-async def _phase_discovery(db, job_id: int, industries: list[str]):
+async def _phase_discovery(db, job_id: int, industries: list[str], sources: list[str] | None = None):
     await job_service.add_log(db, job_id, "info", "Starting discovery phase")
+    run_google = not sources or "google" in sources
+    run_thomasnet = not sources or "thomasnet" in sources
+    run_kompass = not sources or "kompass" in sources
+    run_industrynet = not sources or "industrynet" in sources
+
+    source_names = []
+    if run_google:
+        source_names.append("Google")
+    if run_thomasnet:
+        source_names.append("ThomasNet")
+    if run_kompass:
+        source_names.append("Kompass")
+    if run_industrynet:
+        source_names.append("IndustryNet")
+    await job_service.add_log(db, job_id, "info", f"Sources: {', '.join(source_names)}")
+
     scraper = GoogleSearchScraper()
 
     total_urls = 0
@@ -101,71 +119,75 @@ async def _phase_discovery(db, job_id: int, industries: list[str]):
     errors = 0
     seen_domains = set()
 
-    for industry in industries:
-        await _check_job_status(db, job_id)
-        queries = generate_queries(industry)
-        await job_service.add_log(db, job_id, "info", f"Searching {industry} ({len(queries)} queries)")
-
-        for query in queries:
+    # Phase 1: Google Search (Serper API)
+    if run_google:
+        for industry in industries:
             await _check_job_status(db, job_id)
+            queries = generate_queries(industry)
+            await job_service.add_log(db, job_id, "info", f"Searching {industry} ({len(queries)} queries)")
 
-            try:
-                urls = await scraper.search(query, num_results=10)
-                if not urls:
-                    continue
+            for query in queries:
+                await _check_job_status(db, job_id)
 
-                # Deduplicate by domain before scraping
-                new_urls = []
-                for url in urls:
-                    domain = urlparse(url).netloc.lower().removeprefix("www.")
-                    if domain not in seen_domains:
-                        seen_domains.add(domain)
-                        new_urls.append(url)
+                try:
+                    urls = await scraper.search(query, num_results=10)
+                    if not urls:
+                        continue
 
-                total_urls += len(new_urls)
-                await job_service.update_job_progress(db, job_id, total_urls=total_urls)
+                    # Deduplicate by domain before scraping
+                    new_urls = []
+                    for url in urls:
+                        domain = urlparse(url).netloc.lower().removeprefix("www.")
+                        if domain not in seen_domains:
+                            seen_domains.add(domain)
+                            new_urls.append(url)
 
-                for url in new_urls:
-                    await _check_job_status(db, job_id)
-                    try:
-                        company_data = await scraper.scrape_company(url)
-                        processed += 1
+                    total_urls += len(new_urls)
+                    await job_service.update_job_progress(db, job_id, total_urls=total_urls)
 
-                        if company_data and company_data.name and company_data.domain:
-                            # Skip if domain already saved
-                            if await company_service.get_company_by_domain(db, company_data.domain):
-                                await job_service.update_job_progress(db, job_id, processed_urls=processed)
-                                continue
+                    for url in new_urls:
+                        await _check_job_status(db, job_id)
+                        try:
+                            company_data = await scraper.scrape_company(url)
+                            processed += 1
 
-                            company_data.industry = industry
-                            saved = await _save_company(db, job_id, company_data)
-                            if saved:
-                                companies_found += 1
+                            if company_data and company_data.name and company_data.domain:
+                                # Skip if domain already saved
+                                if await company_service.get_company_by_domain(db, company_data.domain):
+                                    await job_service.update_job_progress(db, job_id, processed_urls=processed)
+                                    continue
 
-                        await job_service.update_job_progress(
-                            db, job_id,
-                            processed_urls=processed,
-                            companies_found=companies_found,
-                            errors_count=errors,
-                        )
-                    except Exception as e:
-                        errors += 1
-                        processed += 1
-                        await job_service.add_log(db, job_id, "error", f"Scrape error: {e}", url=url)
-                        await job_service.update_job_progress(
-                            db, job_id, processed_urls=processed, errors_count=errors
-                        )
+                                company_data.industry = industry
+                                saved = await _save_company(db, job_id, company_data)
+                                if saved:
+                                    companies_found += 1
 
-            except Exception as e:
-                errors += 1
-                await job_service.add_log(db, job_id, "warning", f"Search failed: {e}")
+                            await job_service.update_job_progress(
+                                db, job_id,
+                                processed_urls=processed,
+                                companies_found=companies_found,
+                                errors_count=errors,
+                            )
+                        except Exception as e:
+                            errors += 1
+                            processed += 1
+                            await job_service.add_log(db, job_id, "error", f"Scrape error: {e}", url=url)
+                            await job_service.update_job_progress(
+                                db, job_id, processed_urls=processed, errors_count=errors
+                            )
 
-    # Phase 2: Directory sources (ThomasNet, Kompass, IndustryNet) — uses site: Google searches
-    directory_scrapers = [
-        ("ThomasNet", ThomasNetScraper()),
-        ("Kompass", KompassScraper()),
-        ("IndustryNet", IndustryNetScraper()),
-    ]
+                except Exception as e:
+                    errors += 1
+                    await job_service.add_log(db, job_id, "warning", f"Search failed: {e}")
+
+    # Phase 2: Directory sources — uses site: Google searches via Serper
+    directory_scrapers = []
+    if run_thomasnet:
+        directory_scrapers.append(("ThomasNet", ThomasNetScraper()))
+    if run_kompass:
+        directory_scrapers.append(("Kompass", KompassScraper()))
+    if run_industrynet:
+        directory_scrapers.append(("IndustryNet", IndustryNetScraper()))
 
     for source_name, dir_scraper in directory_scrapers:
         await _check_job_status(db, job_id)

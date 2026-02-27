@@ -51,11 +51,14 @@ async def get_job(job_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.post("", response_model=JobOut, status_code=201)
 async def create_job(data: JobCreate, db: AsyncSession = Depends(get_db)):
+    config = {**data.config}
+    if data.sources:
+        config["sources"] = data.sources
     job = ScrapeJob(
         name=data.name,
         job_type=data.job_type,
         industries=json.dumps(data.industries),
-        config=json.dumps(data.config),
+        config=json.dumps(config),
         status="pending",
     )
     db.add(job)

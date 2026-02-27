@@ -156,6 +156,9 @@ async function runScrape() {
     const selected = $$(".scrape-ind-cb").filter(cb => cb.checked).map(cb => cb.value);
     if (selected.length === 0) return;
 
+    const selectedSources = $$(".scrape-src-cb").filter(cb => cb.checked).map(cb => cb.value);
+    if (selectedSources.length === 0) return;
+
     const goBtn = $("#scrape-go-btn");
     const scrapeBtn = $("#scrape-btn");
     goBtn.disabled = true;
@@ -165,11 +168,13 @@ async function runScrape() {
 
     try {
         const date = new Date().toLocaleDateString("en-US", {month: "short", day: "numeric"});
+        const srcLabel = selectedSources.length === 4 ? "" : " (" + selectedSources.join(", ") + ")";
         const label = selected.length === _scrapeIndustries.length ? "All Industries" : selected.length + " Industries";
         const job = await api.post("/api/jobs", {
-            name: label + " — " + date,
+            name: label + srcLabel + " — " + date,
             job_type: "full",
             industries: selected,
+            sources: selectedSources,
         });
         await api.post(`/api/jobs/${job.id}/start`);
         window.location.href = `/jobs/${job.id}`;
