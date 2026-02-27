@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 {% block title %}New Scrape Job - Lead Scraper{% endblock %}
 {% block content %}
-<p><a href="/jobs">&larr; Back to Jobs</a></p>
+<a href="/jobs" class="back-link">&larr; Jobs</a>
 <h2>New Scrape Job</h2>
 
 <form id="job-form">
-    <label>Job Name
-        <input type="text" id="job-name" placeholder="e.g., Aerospace Q1 Discovery" required>
+    <label>Job Name <small>(optional — auto-generated if blank)</small>
+        <input type="text" id="job-name" placeholder="Auto-generated from selected industries">
     </label>
 
     <label>Job Type
@@ -19,6 +19,7 @@
 
     <fieldset>
         <legend>Target Industries</legend>
+        <label><input type="checkbox" id="select-all"> <strong>Select All</strong></label>
         <div class="checkbox-grid" id="industries-grid"></div>
     </fieldset>
 

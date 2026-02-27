@@ -16,16 +16,29 @@ document.addEventListener("DOMContentLoaded", () => {
         grid.appendChild(label);
     });
 
+    $("#select-all").addEventListener("change", (e) => {
+        $$('input[name="industry"]').forEach(cb => cb.checked = e.target.checked);
+    });
+
     $("#job-form").addEventListener("submit", async (e) => {
         e.preventDefault();
-        const name = $("#job-name").value.trim();
         const jobType = $("#job-type").value;
         const industries = $$('input[name="industry"]:checked').map(cb => cb.value);
 
-        if (!name) return;
         if (industries.length === 0) {
             alert("Please select at least one industry.");
             return;
+        }
+
+        // Auto-generate name if blank
+        let name = $("#job-name").value.trim();
+        if (!name) {
+            const date = new Date().toLocaleDateString("en-US", {month: "short", day: "numeric"});
+            if (industries.length <= 2) {
+                name = industries.join(" & ") + " — " + date;
+            } else {
+                name = industries.length + " Industries — " + date;
+            }
         }
 
         try {

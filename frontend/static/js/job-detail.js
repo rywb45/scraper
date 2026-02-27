@@ -16,16 +16,16 @@ document.addEventListener("DOMContentLoaded", () => {
             actions.innerHTML = "";
             if (job.status === "running") {
                 actions.innerHTML = `
-                    <button onclick="pauseJob()" class="secondary" style="width:auto">Pause</button>
-                    <button onclick="cancelJob()" class="contrast" style="width:auto">Cancel</button>`;
+                    <button onclick="pauseJob()" class="secondary">Pause</button>
+                    <button onclick="cancelJob()" class="danger">Cancel</button>`;
             } else if (job.status === "paused") {
                 actions.innerHTML = `
-                    <button onclick="resumeJob()" style="width:auto">Resume</button>
-                    <button onclick="cancelJob()" class="contrast" style="width:auto">Cancel</button>`;
+                    <button onclick="resumeJob()">Resume</button>
+                    <button onclick="cancelJob()" class="danger">Cancel</button>`;
             } else if (job.status === "pending") {
                 actions.innerHTML = `
-                    <button onclick="startJob()" style="width:auto">Start Job</button>
-                    <button onclick="cancelJob()" class="contrast" style="width:auto">Cancel</button>`;
+                    <button onclick="startJob()">Start Job</button>
+                    <button onclick="cancelJob()" class="danger">Cancel</button>`;
             }
 
             // Stop refreshing if terminal

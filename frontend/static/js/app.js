@@ -73,6 +73,37 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
+// Quick scrape — one click, all industries
+async function quickScrape() {
+    const btn = $("#scrape-btn");
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.innerHTML = `<svg class="spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Scraping...`;
+
+    try {
+        const date = new Date().toLocaleDateString("en-US", {month: "short", day: "numeric"});
+        const job = await api.post("/api/jobs", {
+            name: "All Industries — " + date,
+            job_type: "full",
+            industries: [
+                "Aerospace & Defense",
+                "Industrial Machinery & Equipment",
+                "Specialty Chemicals",
+                "Commodity Trading",
+                "Medical & Scientific Equipment",
+                "Building Materials",
+                "Electrical & Electronic Hardware",
+            ],
+        });
+        await api.post(`/api/jobs/${job.id}/start`);
+        window.location.href = `/jobs/${job.id}`;
+    } catch (err) {
+        console.error("Quick scrape error:", err);
+        btn.disabled = false;
+        btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Scrape`;
+    }
+}
+
 function companyLogo(domain, size = 20) {
     if (!domain) return "";
     const logoUrl = `https://logo.clearbit.com/${encodeURIComponent(domain)}`;
