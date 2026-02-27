@@ -6,9 +6,10 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     // Load filter options
     try {
-        const [industries, states] = await Promise.all([
+        const [industries, states, cities] = await Promise.all([
             api.get("/api/companies/industries"),
             api.get("/api/companies/states"),
+            api.get("/api/companies/cities"),
         ]);
         const indSel = $("#filter-industry");
         industries.forEach(i => {
@@ -24,6 +25,13 @@ document.addEventListener("DOMContentLoaded", async () => {
             opt.textContent = s;
             stSel.appendChild(opt);
         });
+        const citySel = $("#filter-city");
+        cities.forEach(c => {
+            const opt = document.createElement("option");
+            opt.value = c;
+            opt.textContent = c;
+            citySel.appendChild(opt);
+        });
     } catch (e) {
         console.error("Filter load error:", e);
     }
@@ -32,18 +40,22 @@ document.addEventListener("DOMContentLoaded", async () => {
         const search = $("#search").value;
         const industry = $("#filter-industry").value;
         const state = $("#filter-state").value;
+        const city = $("#filter-city").value;
+        const revenue = $("#filter-revenue").value;
         const params = new URLSearchParams({
             page, per_page: 25, sort_by: sortBy, sort_dir: sortDir,
         });
         if (search) params.set("search", search);
         if (industry) params.set("industry", industry);
         if (state) params.set("state", state);
+        if (city) params.set("city", city);
+        if (revenue) params.set("revenue_bracket", revenue);
 
         try {
             const data = await api.get(`/api/companies?${params}`);
             const body = $("#companies-body");
             if (data.items.length === 0) {
-                body.innerHTML = '<tr><td colspan="9">No companies found</td></tr>';
+                body.innerHTML = '<tr><td colspan="10">No companies found</td></tr>';
             } else {
                 body.innerHTML = data.items.map(c => `
                     <tr>
@@ -52,6 +64,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                         <td>${escapeHtml(c.industry || "—")}</td>
                         <td>${escapeHtml(c.employee_count_range || (c.employee_count ? c.employee_count.toLocaleString() : "—"))}</td>
                         <td>${c.estimated_revenue ? `<strong>${escapeHtml(c.estimated_revenue)}</strong>${c.revenue_source === "estimated" ? " <small>(est)</small>" : ""}` : "—"}</td>
+                        <td>${escapeHtml(c.city || "—")}</td>
                         <td>${escapeHtml(c.state || "—")}</td>
                         <td>${c.contact_count}</td>
                         <td><button class="btn-delete-co" onclick="deleteCompany(${c.id}, this)" title="Delete">&times;</button></td>
@@ -110,6 +123,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     // Filters
     $("#filter-industry").addEventListener("change", () => { page = 1; loadCompanies(); });
     $("#filter-state").addEventListener("change", () => { page = 1; loadCompanies(); });
+    $("#filter-city").addEventListener("change", () => { page = 1; loadCompanies(); });
+    $("#filter-revenue").addEventListener("change", () => { page = 1; loadCompanies(); });
 
     // CSV export
     $("#btn-export").addEventListener("click", () => {

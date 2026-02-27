@@ -208,6 +208,35 @@ def _extract_employees_from_text(text: str) -> tuple[int | None, str]:
     return None, ""
 
 
+def _is_valid_city(name: str) -> bool:
+    """Check that a city name looks reasonable."""
+    if not name or len(name) < 2 or len(name) > 25:
+        return False
+    # Must start with uppercase, only letters/spaces/hyphens/periods/apostrophes
+    if not re.match(r"^[A-Z][A-Za-z .'-]+$", name):
+        return False
+    # No concatenated words (uppercase after lowercase without space)
+    if re.search(r"[a-z][A-Z]", name):
+        return False
+    # Reject address/garbage words
+    bad = {"street", "avenue", "drive", "road", "blvd", "suite", "highway",
+           "pkwy", "lane", "court", "circle", "ave", "rd", "st", "dr", "ct",
+           "hwy", "nw", "ne", "sw", "se", "way", "place", "ridge", "parkway",
+           "bridge", "main", "industrial", "center", "corporate", "international",
+           "county", "located", "employees", "phone", "number", "the", "units"}
+    words = name.lower().split()
+    if any(w in bad for w in words):
+        return False
+    # Reject garbage prefixes
+    lower = name.lower()
+    if any(lower.startswith(p) for p in ["is ", "are ", "at ", "on ", "in ", "th ", "nd ", "rd "]):
+        return False
+    # Max 4 words
+    if len(words) > 4:
+        return False
+    return True
+
+
 def _extract_location_from_text(text: str) -> tuple[str, str]:
     # Try "headquartered in City, State" pattern
     match = LOCATION_PATTERN.search(text)
@@ -215,14 +244,14 @@ def _extract_location_from_text(text: str) -> tuple[str, str]:
         city = match.group(1).strip()
         state_raw = match.group(2).strip()
         state = _normalize_state(state_raw)
-        if state:
+        if state and _is_valid_city(city):
             return city, state
 
     # Try "City, ST" pattern — take the first US match
     for match in CITY_STATE_PATTERN.finditer(text):
         city = match.group(1).strip()
         state = match.group(2).strip()
-        if state in STATE_ABBREVS:
+        if state in STATE_ABBREVS and _is_valid_city(city):
             return city, state
 
     return "", ""
@@ -291,7 +320,7 @@ def _parse_location_string(s: str) -> tuple[str, str]:
         city = match.group(1).strip()
         state_raw = match.group(2).strip()
         state = _normalize_state(state_raw)
-        if state:
+        if state and _is_valid_city(city):
             return city, state
     return "", ""
 

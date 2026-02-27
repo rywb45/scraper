@@ -6,6 +6,37 @@ from app.db.models import Company, Contact
 from app.schemas.company import CompanyCreate, CompanyUpdate
 
 
+REVENUE_BRACKETS = {
+    "under_1m": (None, 1_000_000),
+    "1m_10m": (1_000_000, 10_000_000),
+    "10m_50m": (10_000_000, 50_000_000),
+    "50m_100m": (50_000_000, 100_000_000),
+    "100m_500m": (100_000_000, 500_000_000),
+    "500m_1b": (500_000_000, 1_000_000_000),
+    "over_1b": (1_000_000_000, None),
+}
+
+
+def _parse_revenue_to_number(rev_str: str) -> float | None:
+    """Convert revenue string like '$50M' or '$1.2B' to a number."""
+    import re
+    if not rev_str:
+        return None
+    rev_str = rev_str.replace("~", "").replace(",", "").strip()
+    m = re.match(r"\$\s*([\d.]+)\s*(B|M|K)?", rev_str, re.IGNORECASE)
+    if not m:
+        return None
+    val = float(m.group(1))
+    suffix = (m.group(2) or "").upper()
+    if suffix == "B":
+        return val * 1_000_000_000
+    elif suffix == "M":
+        return val * 1_000_000
+    elif suffix == "K":
+        return val * 1_000
+    return val
+
+
 async def get_companies(
     db: AsyncSession,
     page: int = 1,
@@ -13,6 +44,8 @@ async def get_companies(
     search: str | None = None,
     industry: str | None = None,
     state: str | None = None,
+    city: str | None = None,
+    revenue_bracket: str | None = None,
     sort_by: str = "created_at",
     sort_dir: str = "desc",
 ):
@@ -29,6 +62,27 @@ async def get_companies(
         query = query.where(Company.industry == industry)
     if state:
         query = query.where(Company.state == state)
+    if city:
+        query = query.where(Company.city == city)
+
+    # Revenue bracket filtering — needs Python since revenue is a formatted string
+    if revenue_bracket and revenue_bracket in REVENUE_BRACKETS:
+        low, high = REVENUE_BRACKETS[revenue_bracket]
+        # Must filter in Python, so fetch all matching IDs first
+        all_result = await db.execute(query.with_only_columns(Company.id, Company.estimated_revenue))
+        matching_ids = []
+        for cid, rev_str in all_result.all():
+            val = _parse_revenue_to_number(rev_str)
+            if val is None:
+                continue
+            if low is not None and val < low:
+                continue
+            if high is not None and val >= high:
+                continue
+            matching_ids.append(cid)
+        if not matching_ids:
+            return {"items": [], "total": 0, "page": page, "per_page": per_page, "pages": 1}
+        query = select(Company).where(Company.id.in_(matching_ids))
 
     # Count
     count_query = select(func.count()).select_from(query.subquery())
@@ -111,6 +165,13 @@ async def get_distinct_industries(db: AsyncSession) -> list[str]:
 
 async def get_distinct_states(db: AsyncSession) -> list[str]:
     result = await db.execute(
-        select(Company.state).where(Company.state.isnot(None)).distinct().order_by(Company.state)
+        select(Company.state).where(Company.state.isnot(None)).where(Company.state != "").distinct().order_by(Company.state)
+    )
+    return [r[0] for r in result.all()]
+
+
+async def get_distinct_cities(db: AsyncSession) -> list[str]:
+    result = await db.execute(
+        select(Company.city).where(Company.city.isnot(None)).where(Company.city != "").distinct().order_by(Company.city)
     )
     return [r[0] for r in result.all()]

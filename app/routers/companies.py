@@ -15,13 +15,17 @@ async def list_companies(
     search: str | None = None,
     industry: str | None = None,
     state: str | None = None,
+    city: str | None = None,
+    revenue_bracket: str | None = None,
     sort_by: str = "created_at",
     sort_dir: str = "desc",
     db: AsyncSession = Depends(get_db),
 ):
     return await company_service.get_companies(
         db, page=page, per_page=per_page, search=search,
-        industry=industry, state=state, sort_by=sort_by, sort_dir=sort_dir,
+        industry=industry, state=state, city=city,
+        revenue_bracket=revenue_bracket,
+        sort_by=sort_by, sort_dir=sort_dir,
     )
 
 
@@ -33,6 +37,11 @@ async def list_industries(db: AsyncSession = Depends(get_db)):
 @router.get("/states")
 async def list_states(db: AsyncSession = Depends(get_db)):
     return await company_service.get_distinct_states(db)
+
+
+@router.get("/cities")
+async def list_cities(db: AsyncSession = Depends(get_db)):
+    return await company_service.get_distinct_cities(db)
 
 
 @router.get("/{company_id}", response_model=CompanyOut)
