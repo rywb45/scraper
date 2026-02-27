@@ -57,19 +57,22 @@ document.addEventListener("DOMContentLoaded", async () => {
             if (data.items.length === 0) {
                 body.innerHTML = '<tr><td colspan="10">No companies found</td></tr>';
             } else {
-                body.innerHTML = data.items.map(c => `
-                    <tr>
+                body.innerHTML = data.items.map(c => {
+                    const city = c.city && c.city.trim() ? escapeHtml(c.city) : "—";
+                    const state = c.state && c.state.trim() ? escapeHtml(c.state) : "—";
+                    const contacts = c.contact_count != null ? c.contact_count : 0;
+                    return `<tr>
                         <td><a href="/companies/${c.id}" class="company-name-cell">${companyLogo(c.domain)} ${escapeHtml(c.name)}</a></td>
-                        <td>${c.website ? `<a href="${escapeHtml(c.website)}" target="_blank" rel="noopener">${escapeHtml(c.domain)}</a>` : escapeHtml(c.domain)}</td>
+                        <td>${c.website ? `<a href="${escapeHtml(c.website)}" target="_blank" rel="noopener">${escapeHtml(c.domain)}</a>` : escapeHtml(c.domain || "—")}</td>
                         <td>${escapeHtml(c.industry || "—")}</td>
                         <td>${escapeHtml(c.employee_count_range || (c.employee_count ? c.employee_count.toLocaleString() : "—"))}</td>
                         <td>${c.estimated_revenue ? `<strong>${escapeHtml(c.estimated_revenue)}</strong>${c.revenue_source === "estimated" ? " <small>(est)</small>" : ""}` : "—"}</td>
-                        <td>${escapeHtml(c.city || "—")}</td>
-                        <td>${escapeHtml(c.state || "—")}</td>
-                        <td>${c.contact_count}</td>
+                        <td>${city}</td>
+                        <td>${state}</td>
+                        <td>${contacts}</td>
                         <td><button class="btn-delete-co" onclick="deleteCompany(${c.id}, this)" title="Delete">&times;</button></td>
-                    </tr>
-                `).join("");
+                    </tr>`;
+                }).join("");
             }
 
             // Pagination

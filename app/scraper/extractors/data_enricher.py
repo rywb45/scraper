@@ -10,12 +10,18 @@ REVENUE_PATTERNS = [
     re.compile(r"\$\s*([\d,.]+)\s*(billion|million|B|M)\b", re.IGNORECASE),
     re.compile(r"revenue[:\s]+\$?\s*([\d,.]+)\s*(billion|million|B|M)", re.IGNORECASE),
     re.compile(r"annual\s+(?:revenue|sales)[:\s]+\$?\s*([\d,.]+)\s*(billion|million|B|M)", re.IGNORECASE),
+    re.compile(r"(?:varies|ranges?)\s+(?:between|from)\s+\$?\s*([\d,.]+)\s*(billion|million|B|M)", re.IGNORECASE),
+    re.compile(r"revenue\s+of\s+\$?\s*([\d,.]+)\s*(billion|million|B|M)", re.IGNORECASE),
 ]
 
 EMPLOYEE_PATTERNS = [
-    re.compile(r"([\d,]+)\s*(?:\+\s*)?employees", re.IGNORECASE),
-    re.compile(r"(?:employs?|workforce|staff|headcount|team)[:\s]+([\d,]+)", re.IGNORECASE),
-    re.compile(r"([\d,]+)\s*(?:people|workers|staff)", re.IGNORECASE),
+    re.compile(r"(?:has|have|with|about|approximately|nearly|over|around)?\s*([\d,]+)\s*(?:\+\s*)?(?:total\s+)?employees", re.IGNORECASE),
+    re.compile(r"([\d,]+)\s*(?:\+\s*)?(?:full[ -]time\s+)?employees", re.IGNORECASE),
+    re.compile(r"(?:employs?|workforce|staff|headcount|team\s+(?:of|size))[:\s]+([\d,]+)", re.IGNORECASE),
+    re.compile(r"([\d,]+)\s*(?:total\s+)?(?:people|workers|staff|team\s+members)", re.IGNORECASE),
+    re.compile(r"employee\s+count[:\s]+([\d,]+)", re.IGNORECASE),
+    re.compile(r"number\s+of\s+employees[:\s]+([\d,]+)", re.IGNORECASE),
+    re.compile(r"(?:ranges?|varies)\s+from\s+([\d,]+)\s+to\s+[\d,]+", re.IGNORECASE),
 ]
 
 US_STATES = {
@@ -36,14 +42,40 @@ US_STATES = {
 
 STATE_ABBREVS = set(US_STATES.values())
 
-# City, State pattern
-LOCATION_PATTERN = re.compile(
-    r"(?:headquartered|based|located|headquarters)[:\s]+(?:in\s+)?([A-Z][a-z]+(?:\s[A-Z][a-z]+)*),\s*([A-Z]{2}|[A-Z][a-z]+(?:\s[A-Z][a-z]+)*)",
-    re.IGNORECASE,
-)
+# City, State pattern — multiple formats
+LOCATION_PATTERNS = [
+    re.compile(r"(?:headquartered|based|located|headquarters|location)[:\s]+(?:in\s+)?([A-Z][a-z]+(?:\s[A-Z][a-z]+)*),\s*([A-Z]{2}|[A-Z][a-z]+(?:\s[A-Z][a-z]+)*)", re.IGNORECASE),
+    re.compile(r"(?:location\s+in|office\s+in|based\s+in|located\s+in)\s+([A-Z][a-z]+(?:\s[A-Z][a-z]+)*),\s*([A-Z]{2}|[A-Z][a-z]+(?:\s[A-Z][a-z]+)*)", re.IGNORECASE),
+    re.compile(r"in\s+([A-Z][a-z]+(?:\s[A-Z][a-z]+)*),\s*([A-Z][a-z]+(?:\s[A-Z][a-z]+)*),\s*\d{5}", re.IGNORECASE),  # "in Lakeville, Minnesota, 55044"
+]
 CITY_STATE_PATTERN = re.compile(
     r"([A-Z][a-z]+(?:\s[A-Z][a-z]+)*),\s*([A-Z]{2})\b"
 )
+
+
+async def _do_search(query: str, all_text_ref: list, kg_data: dict):
+    """Run a Serper search and collect text snippets + knowledge graph data."""
+    try:
+        data = await _serper_search(query)
+        if not data:
+            return
+
+        kg = data.get("knowledgeGraph", {})
+        if kg:
+            kg_data.update(kg)
+
+        if data.get("answerBox"):
+            ab = data["answerBox"]
+            all_text_ref[0] += " " + (ab.get("answer", "") or ab.get("snippet", ""))
+
+        for r in data.get("organic", []):
+            all_text_ref[0] += " " + (r.get("snippet", "") or "")
+            all_text_ref[0] += " " + (r.get("title", "") or "")
+
+        for paa in data.get("peopleAlsoAsk", []):
+            all_text_ref[0] += " " + (paa.get("snippet", "") or "")
+    except Exception:
+        pass
 
 
 async def enrich_company(company_name: str, domain: str) -> dict:
@@ -60,47 +92,18 @@ async def enrich_company(company_name: str, domain: str) -> dict:
     if not settings.serp_api_key:
         return result
 
-    # Do two targeted searches
-    queries = [
-        f'"{company_name}" revenue employees headquarters',
-        f'"{domain}" company revenue annual sales employees',
-    ]
-
     all_text = ""
     kg_data = {}
 
-    for query in queries:
-        try:
-            data = await _serper_search(query)
-            if not data:
-                continue
-
-            # Knowledge graph is the best source
-            kg = data.get("knowledgeGraph", {})
-            if kg:
-                kg_data = {**kg_data, **kg}
-
-            # Collect all text from snippets + answer boxes
-            if data.get("answerBox"):
-                ab = data["answerBox"]
-                all_text += " " + (ab.get("answer", "") or ab.get("snippet", ""))
-
-            for r in data.get("organic", []):
-                all_text += " " + (r.get("snippet", "") or "")
-                all_text += " " + (r.get("title", "") or "")
-
-            # People also ask
-            for paa in data.get("peopleAlsoAsk", []):
-                all_text += " " + (paa.get("snippet", "") or "")
-
-        except Exception:
-            continue
+    # First search — comprehensive
+    await _do_search(f'"{company_name}" revenue employees headquarters', all_text_ref := [""], kg_data)
+    all_text = all_text_ref[0]
 
     # Extract from knowledge graph first
     if kg_data:
         _extract_from_kg(kg_data, result)
 
-    # Fill gaps from snippets
+    # Fill from snippets
     if not result["estimated_revenue"]:
         rev, src = _extract_revenue_from_text(all_text)
         if rev:
@@ -118,6 +121,37 @@ async def enrich_company(company_name: str, domain: str) -> dict:
         if state:
             result["city"] = city
             result["state"] = state
+
+    # Second search only if still missing critical data — saves API calls
+    missing = []
+    if not result["estimated_revenue"]: missing.append("revenue")
+    if not result["state"]: missing.append("headquarters location")
+    if not result["employee_count"]: missing.append("employees")
+
+    if missing:
+        all_text2_ref = [""]
+        kg_data2 = {}
+        await _do_search(f'"{company_name}" {" ".join(missing)}', all_text2_ref, kg_data2)
+        all_text2 = all_text2_ref[0]
+
+        if kg_data2:
+            _extract_from_kg(kg_data2, result)
+
+        if not result["estimated_revenue"]:
+            rev, src = _extract_revenue_from_text(all_text2)
+            if rev:
+                result["estimated_revenue"] = rev
+                result["revenue_source"] = src
+        if not result["employee_count"]:
+            count, rng = _extract_employees_from_text(all_text2)
+            if count:
+                result["employee_count"] = count
+                result["employee_count_range"] = rng
+        if not result["state"]:
+            city, state = _extract_location_from_text(all_text2)
+            if state:
+                result["city"] = city
+                result["state"] = state
 
     # If we have employees but not revenue, estimate
     if not result["estimated_revenue"] and result["employee_count"]:
@@ -202,7 +236,13 @@ def _extract_employees_from_text(text: str) -> tuple[int | None, str]:
     for pattern in EMPLOYEE_PATTERNS:
         match = pattern.search(text)
         if match:
-            count = int(match.group(1).replace(",", ""))
+            raw = match.group(1).replace(",", "").strip()
+            if not raw:
+                continue
+            try:
+                count = int(raw)
+            except ValueError:
+                continue
             if 1 <= count <= 500_000:
                 return count, _count_to_range(count)
     return None, ""
@@ -238,14 +278,15 @@ def _is_valid_city(name: str) -> bool:
 
 
 def _extract_location_from_text(text: str) -> tuple[str, str]:
-    # Try "headquartered in City, State" pattern
-    match = LOCATION_PATTERN.search(text)
-    if match:
-        city = match.group(1).strip()
-        state_raw = match.group(2).strip()
-        state = _normalize_state(state_raw)
-        if state and _is_valid_city(city):
-            return city, state
+    # Try structured patterns first
+    for pattern in LOCATION_PATTERNS:
+        match = pattern.search(text)
+        if match:
+            city = match.group(1).strip()
+            state_raw = match.group(2).strip()
+            state = _normalize_state(state_raw)
+            if state and _is_valid_city(city):
+                return city, state
 
     # Try "City, ST" pattern — take the first US match
     for match in CITY_STATE_PATTERN.finditer(text):

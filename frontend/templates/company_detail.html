@@ -10,9 +10,37 @@
         <table id="company-info"></table>
     </section>
     <section>
-        <h4>Contacts <span id="contact-count"></span></h4>
+        <div class="page-header">
+            <h4>Contacts <span id="contact-count"></span></h4>
+            <button onclick="toggleContactForm()" class="secondary" id="add-contact-toggle" style="padding:0.3rem 0.7rem;font-size:12px">+ Add Contact</button>
+        </div>
+
+        <div id="contact-form-wrap" style="display:none;margin-bottom:1rem">
+            <div class="card" style="padding:1rem">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">
+                    <input type="text" id="cf-first" placeholder="First name">
+                    <input type="text" id="cf-last" placeholder="Last name">
+                    <input type="text" id="cf-title" placeholder="Title / Role">
+                    <input type="email" id="cf-email" placeholder="Email">
+                    <input type="text" id="cf-phone" placeholder="Phone">
+                    <input type="text" id="cf-linkedin" placeholder="LinkedIn URL">
+                </div>
+                <div style="display:flex;gap:0.5rem;margin-top:0.65rem">
+                    <button onclick="saveContact()" id="cf-save-btn">Save Contact</button>
+                    <button onclick="cancelContactForm()" class="secondary">Cancel</button>
+                </div>
+            </div>
+        </div>
+
         <table>
-            <thead><tr><th>Name</th><th>Title</th><th>Email</th><th>Confidence</th><th>Phone</th></tr></thead>
+            <thead><tr>
+                <th>Name</th>
+                <th>Title</th>
+                <th>Email</th>
+                <th>Phone</th>
+                <th>LinkedIn</th>
+                <th></th>
+            </tr></thead>
             <tbody id="contacts-body"></tbody>
         </table>
     </section>

@@ -824,13 +824,14 @@ td small {
     font-size: 11px;
 }
 
-/* ========== Inline Delete Button ========== */
-.btn-delete-co {
+/* ========== Inline Action Buttons ========== */
+.btn-delete-co,
+.btn-edit-contact {
     background: none;
     color: var(--text-tertiary);
-    font-size: 18px;
+    font-size: 16px;
     line-height: 1;
-    padding: 0.15rem 0.4rem;
+    padding: 0.15rem 0.35rem;
     border-radius: var(--radius-xs);
     box-shadow: none;
 }
@@ -838,6 +839,13 @@ td small {
 .btn-delete-co:hover {
     background: var(--red-bg);
     color: var(--red);
+    box-shadow: none;
+    transform: none;
+}
+
+.btn-edit-contact:hover {
+    background: var(--accent-light);
+    color: var(--accent);
     box-shadow: none;
     transform: none;
 }
