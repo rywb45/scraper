@@ -1,9 +1,7 @@
-import httpx
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.db.database import get_db
 from app.db.models import Company, Contact, ScrapeJob
 from app.schemas.stats import DashboardStats, IndustryBreakdown
@@ -13,18 +11,20 @@ router = APIRouter()
 
 @router.get("/api-usage")
 async def get_api_usage():
-    if not settings.serp_api_key:
-        return {"balance": 0, "rateLimit": 0, "error": "No API key configured"}
+    from app.scraper.serper_keys import key_manager
+    if not key_manager.has_keys:
+        return {"credit": 0, "error": "No API key configured"}
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(
-                "https://google.serper.dev/account",
-                headers={"X-API-KEY": settings.serp_api_key},
-            )
-            resp.raise_for_status()
-            return resp.json()
+        balances = await key_manager.get_all_balances()
+        total = sum(b.get("credit", 0) for b in balances)
+        return {
+            "credit": total,
+            "keys": key_manager.total_keys,
+            "active_keys": key_manager.active_keys,
+            "balances": balances,
+        }
     except Exception as e:
-        return {"balance": None, "error": str(e)}
+        return {"credit": 0, "error": str(e)}
 
 
 @router.get("", response_model=DashboardStats)

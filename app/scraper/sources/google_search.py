@@ -6,6 +6,7 @@ from app.config import settings
 from app.scraper.base import BaseScraper, ScrapedCompany
 from app.scraper.filters import is_public_company_domain
 from app.scraper.http_client import HttpClient
+from app.scraper.serper_keys import key_manager, serper_search
 
 # Domains that are never actual company websites
 SKIP_DOMAINS = {
@@ -68,23 +69,15 @@ class GoogleSearchScraper(BaseScraper):
             return []
 
     async def _search_serper(self, query: str, num_results: int) -> list[str]:
-        try:
-            async with httpx.AsyncClient(timeout=15) as client:
-                resp = await client.post(
-                    "https://google.serper.dev/search",
-                    json={"q": query, "num": num_results, "gl": "us"},
-                    headers={"X-API-KEY": settings.serp_api_key},
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                urls = []
-                for r in data.get("organic", []):
-                    link = r.get("link", "")
-                    if link and self._is_company_url(link):
-                        urls.append(link)
-                return urls[:num_results]
-        except Exception:
+        data = await serper_search(query, num=num_results)
+        if not data:
             return []
+        urls = []
+        for r in data.get("organic", []):
+            link = r.get("link", "")
+            if link and self._is_company_url(link):
+                urls.append(link)
+        return urls[:num_results]
 
     def _is_company_url(self, url: str) -> bool:
         parsed = urlparse(url)

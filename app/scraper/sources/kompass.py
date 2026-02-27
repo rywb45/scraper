@@ -1,12 +1,10 @@
 import re
 from urllib.parse import urlparse
 
-import httpx
-
-from app.config import settings
 from app.scraper.base import BaseScraper, ScrapedCompany
 from app.scraper.http_client import HttpClient
 from app.scraper.extractors.company_extractor import extract_company
+from app.scraper.serper_keys import key_manager, serper_search
 
 
 class KompassScraper(BaseScraper):
@@ -20,35 +18,27 @@ class KompassScraper(BaseScraper):
 
     async def search(self, query: str, num_results: int = 10) -> list[dict]:
         """Search Google for Kompass company profiles."""
-        if not settings.serp_api_key:
+        if not key_manager.has_keys:
             return []
 
         search_query = f"site:kompass.com/company {query} manufacturer supplier USA"
-        try:
-            async with httpx.AsyncClient(timeout=15) as client:
-                resp = await client.post(
-                    "https://google.serper.dev/search",
-                    json={"q": search_query, "num": num_results, "gl": "us"},
-                    headers={"X-API-KEY": settings.serp_api_key},
-                )
-                resp.raise_for_status()
-                data = resp.json()
-
-                results = []
-                for r in data.get("organic", []):
-                    link = r.get("link", "")
-                    if not link or "/company/" not in link:
-                        continue
-                    results.append({
-                        "url": link,
-                        "title": r.get("title", ""),
-                        "snippet": r.get("snippet", ""),
-                    })
-                    if len(results) >= num_results:
-                        break
-                return results
-        except Exception:
+        data = await serper_search(search_query, num=num_results)
+        if not data:
             return []
+
+        results = []
+        for r in data.get("organic", []):
+            link = r.get("link", "")
+            if not link or "/company/" not in link:
+                continue
+            results.append({
+                "url": link,
+                "title": r.get("title", ""),
+                "snippet": r.get("snippet", ""),
+            })
+            if len(results) >= num_results:
+                break
+        return results
 
     async def scrape_company(self, result: dict | str) -> ScrapedCompany | None:
         """Extract company info from a Kompass search result."""
@@ -161,27 +151,17 @@ def _extract_location_from_snippet(snippet: str) -> tuple[str, str]:
 
 
 async def _find_company_website(name: str) -> tuple[str, str]:
-    if not settings.serp_api_key:
+    data = await serper_search(f"{name} official website", num=3)
+    if not data:
         return "", ""
-    try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.post(
-                "https://google.serper.dev/search",
-                json={"q": f"{name} official website", "num": 3, "gl": "us"},
-                headers={"X-API-KEY": settings.serp_api_key},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            for r in data.get("organic", []):
-                link = r.get("link", "")
-                if not link:
-                    continue
-                parsed = urlparse(link)
-                domain = parsed.netloc.lower().removeprefix("www.")
-                if domain and "." in domain and not _is_social_domain(domain):
-                    return domain, f"{parsed.scheme}://{parsed.netloc}"
-    except Exception:
-        pass
+    for r in data.get("organic", []):
+        link = r.get("link", "")
+        if not link:
+            continue
+        parsed = urlparse(link)
+        domain = parsed.netloc.lower().removeprefix("www.")
+        if domain and "." in domain and not _is_social_domain(domain):
+            return domain, f"{parsed.scheme}://{parsed.netloc}"
     return "", ""
 
 

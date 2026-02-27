@@ -89,7 +89,8 @@ async def enrich_company(company_name: str, domain: str) -> dict:
         "state": "",
     }
 
-    if not settings.serp_api_key:
+    from app.scraper.serper_keys import key_manager
+    if not key_manager.has_keys:
         return result
 
     all_text = ""
@@ -388,14 +389,5 @@ def _count_to_range(count: int) -> str:
 
 
 async def _serper_search(query: str) -> dict | None:
-    try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.post(
-                "https://google.serper.dev/search",
-                json={"q": query, "gl": "us", "num": 5},
-                headers={"X-API-KEY": settings.serp_api_key},
-            )
-            resp.raise_for_status()
-            return resp.json()
-    except Exception:
-        return None
+    from app.scraper.serper_keys import serper_search
+    return await serper_search(query, num=5)
