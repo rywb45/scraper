@@ -129,16 +129,21 @@ async def serper_search(query: str, num: int = 10, gl: str = "us") -> dict | Non
                 json={"q": query, "num": num, "gl": gl},
                 headers={"X-API-KEY": key},
             )
-            if resp.status_code in (403, 429):
-                key_manager.mark_exhausted()
-                # Retry with next key
-                return await serper_search(query, num, gl)
+            # Serper returns 400 "Not enough credits", 403, or 429 when exhausted
+            if resp.status_code in (400, 403, 429):
+                body = resp.text.lower()
+                if "credit" in body or resp.status_code in (403, 429):
+                    key_manager.mark_exhausted()
+                    if key_manager.active_keys > 0:
+                        return await serper_search(query, num, gl)
+                    return None
             resp.raise_for_status()
             return resp.json()
     except httpx.HTTPStatusError as e:
-        if e.response.status_code in (403, 429):
+        if e.response.status_code in (400, 403, 429):
             key_manager.mark_exhausted()
-            return await serper_search(query, num, gl)
+            if key_manager.active_keys > 0:
+                return await serper_search(query, num, gl)
         return None
     except Exception:
         return None
