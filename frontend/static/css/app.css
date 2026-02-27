@@ -1,3 +1,16 @@
+/* Company logos */
+.company-logo {
+    vertical-align: middle;
+    margin-right: 0.4rem;
+    border-radius: 3px;
+    object-fit: contain;
+}
+
+.company-name-cell {
+    display: inline-flex;
+    align-items: center;
+}
+
 /* Navigation */
 nav a.active {
     font-weight: bold;

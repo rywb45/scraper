@@ -25,6 +25,9 @@ class ScrapedCompany:
     sub_industry: str = ""
     description: str = ""
     employee_count_range: str = ""
+    employee_count: int | None = None
+    estimated_revenue: str = ""
+    revenue_source: str = ""
     city: str = ""
     state: str = ""
     zip_code: str = ""

@@ -1,15 +1,23 @@
 document.addEventListener("DOMContentLoaded", async () => {
     try {
         const company = await api.get(`/api/companies/${COMPANY_ID}`);
-        $("#company-name").textContent = company.name;
+        $("#company-name").innerHTML = companyLogo(company.domain, 32) + " " + escapeHtml(company.name);
+
+        const empDisplay = company.employee_count
+            ? `${company.employee_count.toLocaleString()}${company.employee_count_range ? ` (${company.employee_count_range})` : ""}`
+            : company.employee_count_range;
+        const revDisplay = company.estimated_revenue
+            ? `${company.estimated_revenue}${company.revenue_source === "estimated" ? " (estimated from headcount)" : ""}`
+            : null;
 
         const fields = [
             ["Domain", company.domain],
-            ["Website", company.website],
+            ["Website", company.website, "url"],
             ["Industry", company.industry],
             ["Sub-Industry", company.sub_industry],
             ["Description", company.description],
-            ["Employees", company.employee_count_range],
+            ["Employees", empDisplay],
+            ["Est. Revenue", revDisplay],
             ["City", company.city],
             ["State", company.state],
             ["Zip Code", company.zip_code],
@@ -19,7 +27,15 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         $("#company-info").innerHTML = fields
             .filter(([, v]) => v)
-            .map(([k, v]) => `<tr><th>${k}</th><td>${escapeHtml(v)}</td></tr>`)
+            .map(([k, v, type]) => {
+                let cell;
+                if (type === "url") {
+                    cell = `<a href="${escapeHtml(v)}" target="_blank" rel="noopener">${escapeHtml(v)}</a>`;
+                } else {
+                    cell = escapeHtml(String(v));
+                }
+                return `<tr><th>${k}</th><td>${cell}</td></tr>`;
+            })
             .join("");
 
         // Load contacts

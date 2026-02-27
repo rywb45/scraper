@@ -72,3 +72,10 @@ function escapeHtml(str) {
     div.textContent = str;
     return div.innerHTML;
 }
+
+function companyLogo(domain, size = 20) {
+    if (!domain) return "";
+    const logoUrl = `https://logo.clearbit.com/${encodeURIComponent(domain)}`;
+    const fallbackUrl = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=${size}`;
+    return `<img src="${logoUrl}" alt="" width="${size}" height="${size}" class="company-logo" onerror="this.onerror=null;this.src='${fallbackUrl}'">`;
+}

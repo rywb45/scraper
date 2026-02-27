@@ -11,6 +11,9 @@ class CompanyBase(BaseModel):
     sub_industry: str | None = None
     description: str | None = None
     employee_count_range: str | None = None
+    employee_count: int | None = None
+    estimated_revenue: str | None = None
+    revenue_source: str | None = None
     city: str | None = None
     state: str | None = None
     zip_code: str | None = None
@@ -31,6 +34,8 @@ class CompanyUpdate(BaseModel):
     sub_industry: str | None = None
     description: str | None = None
     employee_count_range: str | None = None
+    employee_count: int | None = None
+    estimated_revenue: str | None = None
     city: str | None = None
     state: str | None = None
     zip_code: str | None = None

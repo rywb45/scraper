@@ -28,30 +28,28 @@ async def export_companies_csv(
     writer = csv.writer(output)
     writer.writerow([
         "Company Name", "Domain", "Website", "Industry", "Sub-Industry",
-        "Description", "Employee Count", "City", "State", "Zip", "Phone",
+        "Description", "Employees", "Employee Count", "Est. Revenue", "Revenue Source",
+        "City", "State", "Zip", "Phone",
         "Contact Name", "Contact Title", "Contact Email", "Email Confidence",
         "Contact Phone", "LinkedIn URL", "Source",
     ])
 
     for company in companies:
+        base_row = [
+            company.name, company.domain, company.website,
+            company.industry, company.sub_industry, company.description,
+            company.employee_count_range, company.employee_count,
+            company.estimated_revenue, company.revenue_source,
+            company.city, company.state, company.zip_code, company.phone,
+        ]
         if company.contacts:
             for contact in company.contacts:
-                writer.writerow([
-                    company.name, company.domain, company.website,
-                    company.industry, company.sub_industry, company.description,
-                    company.employee_count_range, company.city, company.state,
-                    company.zip_code, company.phone,
+                writer.writerow(base_row + [
                     contact.full_name, contact.title, contact.email,
                     contact.email_confidence, contact.phone, contact.linkedin_url,
                     company.source,
                 ])
         else:
-            writer.writerow([
-                company.name, company.domain, company.website,
-                company.industry, company.sub_industry, company.description,
-                company.employee_count_range, company.city, company.state,
-                company.zip_code, company.phone,
-                "", "", "", "", "", "", company.source,
-            ])
+            writer.writerow(base_row + ["", "", "", "", "", "", company.source])
 
     return output.getvalue()

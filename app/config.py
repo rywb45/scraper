@@ -2,7 +2,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    model_config = {"env_prefix": "SCRAPER_"}
+    model_config = {"env_prefix": "SCRAPER_", "env_file": ".env"}
 
     # SERP API
     serp_api_key: str = ""

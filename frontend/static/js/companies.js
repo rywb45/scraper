@@ -43,16 +43,17 @@ document.addEventListener("DOMContentLoaded", async () => {
             const data = await api.get(`/api/companies?${params}`);
             const body = $("#companies-body");
             if (data.items.length === 0) {
-                body.innerHTML = '<tr><td colspan="6">No companies found</td></tr>';
+                body.innerHTML = '<tr><td colspan="8">No companies found</td></tr>';
             } else {
                 body.innerHTML = data.items.map(c => `
                     <tr>
-                        <td><a href="/companies/${c.id}">${escapeHtml(c.name)}</a></td>
-                        <td>${escapeHtml(c.domain)}</td>
+                        <td><a href="/companies/${c.id}" class="company-name-cell">${companyLogo(c.domain)} ${escapeHtml(c.name)}</a></td>
+                        <td>${c.website ? `<a href="${escapeHtml(c.website)}" target="_blank" rel="noopener">${escapeHtml(c.domain)}</a>` : escapeHtml(c.domain)}</td>
                         <td>${escapeHtml(c.industry || "—")}</td>
+                        <td>${escapeHtml(c.employee_count_range || (c.employee_count ? c.employee_count.toLocaleString() : "—"))}</td>
+                        <td>${c.estimated_revenue ? `<strong>${escapeHtml(c.estimated_revenue)}</strong>${c.revenue_source === "estimated" ? " <small>(est)</small>" : ""}` : "—"}</td>
                         <td>${escapeHtml(c.state || "—")}</td>
                         <td>${c.contact_count}</td>
-                        <td>${formatDate(c.created_at)}</td>
                     </tr>
                 `).join("");
             }

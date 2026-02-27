@@ -46,7 +46,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         } else {
             compBody.innerHTML = stats.recent_companies.map(c => `
                 <tr>
-                    <td><a href="/companies/${c.id}">${escapeHtml(c.name)}</a></td>
+                    <td><a href="/companies/${c.id}" class="company-name-cell">${companyLogo(c.domain)} ${escapeHtml(c.name)}</a></td>
                     <td>${escapeHtml(c.domain)}</td>
                     <td>${escapeHtml(c.industry || "—")}</td>
                     <td>${escapeHtml(c.state || "—")}</td>

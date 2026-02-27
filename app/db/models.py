@@ -29,6 +29,9 @@ class Company(Base):
     sub_industry = Column(String(200))
     description = Column(Text)
     employee_count_range = Column(String(50))
+    employee_count = Column(Integer, nullable=True)
+    estimated_revenue = Column(String(100))
+    revenue_source = Column(String(50))  # page_text, structured_data, estimated
     city = Column(String(200))
     state = Column(String(100))
     zip_code = Column(String(20))
