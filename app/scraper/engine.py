@@ -456,6 +456,13 @@ async def _enrich_single_company(db, job_id: int, company):
     if not (needs_revenue or needs_employees or needs_state):
         return
 
+    needed = ", ".join(filter(None, [
+        "revenue" if needs_revenue else "",
+        "employees" if needs_employees else "",
+        "location" if needs_state else "",
+    ]))
+    await job_service.add_log(db, job_id, "info", f"Enriching {company.name} (need: {needed})")
+
     data = await enrich_company(company.name, company.domain)
 
     updated = False
@@ -480,6 +487,8 @@ async def _enrich_single_company(db, job_id: int, company):
             data["state"] and f"loc={data['city']}, {data['state']}",
         ]))
         await job_service.add_log(db, job_id, "info", f"Enriched {company.name}: {enriched_fields}")
+    else:
+        await job_service.add_log(db, job_id, "warning", f"Enrichment returned no data for {company.name}")
 
 
 async def _check_job_status(db, job_id: int):

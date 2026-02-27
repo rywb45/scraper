@@ -132,6 +132,11 @@ def _extract_name_from_title(title: str) -> str:
         if sep in title:
             title = title.split(sep)[0]
             break
+    if ": " in title:
+        parts = title.split(": ", 1)
+        after = parts[1].strip()
+        if re.match(r"[A-Z][a-z]+.*,\s*[A-Z]{2}", after):
+            title = parts[0]
     name = title.strip()
     return name[:200] if len(name) >= 2 else ""
 

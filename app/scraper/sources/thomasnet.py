@@ -137,19 +137,27 @@ class ThomasNetScraper(BaseScraper):
 
 
 def _extract_name_from_title(title: str) -> str:
-    """Extract company name from a ThomasNet search result title."""
+    """Extract company name from a ThomasNet search result title.
+
+    Handles formats like:
+      "Company Name: City, ST ZIP - Thomasnet"
+      "Company Name - Supplier of ..."
+    """
     if not title:
         return ""
-    # Common patterns: "Company Name - Supplier of ...", "Company Name | ThomasNet"
+    # Split on " - Thomasnet" or similar suffixes first
     for sep in [" - ", " | ", " — ", " – "]:
         if sep in title:
             title = title.split(sep)[0]
             break
+    # Remove trailing location like ": City, ST ZIP" or ": City, ST"
+    if ": " in title:
+        parts = title.split(": ", 1)
+        # Check if the part after colon looks like a location (starts with capital, has comma+state)
+        after = parts[1].strip()
+        if re.match(r"[A-Z][a-z]+.*,\s*[A-Z]{2}", after):
+            title = parts[0]
     name = title.strip()
-    # Remove common suffixes
-    for suffix in [" Inc", " Inc.", " LLC", " Corp", " Corp.", " Co.", " Ltd", " Ltd."]:
-        if name.endswith(suffix):
-            break
     return name[:200] if len(name) >= 2 else ""
 
 
