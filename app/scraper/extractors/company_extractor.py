@@ -36,7 +36,7 @@ def extract_company(url: str, html: str) -> ScrapedCompany | None:
     company = ScrapedCompany(
         domain=domain,
         website=f"{parsed.scheme}://{parsed.netloc}",
-        source="web",
+        source="google_search",
         source_url=url,
     )
 

@@ -15,6 +15,9 @@ from app.scraper.extractors.data_enricher import enrich_company
 from app.scraper.extractors.email_discoverer import discover_email_pattern, generate_email_candidates
 from app.scraper.http_client import HttpClient
 from app.scraper.sources.google_search import GoogleSearchScraper
+from app.scraper.sources.thomasnet import ThomasNetScraper
+from app.scraper.sources.kompass import KompassScraper
+from app.scraper.sources.industrynet import IndustryNetScraper
 from app.services import company_service, contact_service, job_service
 
 logger = logging.getLogger(__name__)
@@ -156,6 +159,62 @@ async def _phase_discovery(db, job_id: int, industries: list[str]):
             except Exception as e:
                 errors += 1
                 await job_service.add_log(db, job_id, "warning", f"Search failed: {e}")
+
+    # Phase 2: Directory sources (ThomasNet, Kompass, IndustryNet) — no API credits used
+    directory_scrapers = [
+        ("ThomasNet", ThomasNetScraper()),
+        ("Kompass", KompassScraper()),
+        ("IndustryNet", IndustryNetScraper()),
+    ]
+
+    for source_name, dir_scraper in directory_scrapers:
+        await _check_job_status(db, job_id)
+        await job_service.add_log(db, job_id, "info", f"Searching {source_name}...")
+        dir_found = 0
+
+        for industry in industries:
+            await _check_job_status(db, job_id)
+            try:
+                urls = await dir_scraper.search(industry, num_results=20)
+                if not urls:
+                    continue
+
+                for url in urls:
+                    await _check_job_status(db, job_id)
+                    try:
+                        company_data = await dir_scraper.scrape_company(url)
+                        processed += 1
+
+                        if company_data and company_data.name and company_data.domain:
+                            # Skip duplicates
+                            domain = company_data.domain.lower().removeprefix("www.")
+                            if domain in seen_domains:
+                                continue
+                            seen_domains.add(domain)
+
+                            if await company_service.get_company_by_domain(db, domain):
+                                continue
+
+                            company_data.industry = industry
+                            saved = await _save_company(db, job_id, company_data)
+                            if saved:
+                                companies_found += 1
+                                dir_found += 1
+
+                        await job_service.update_job_progress(
+                            db, job_id,
+                            processed_urls=processed,
+                            companies_found=companies_found,
+                            errors_count=errors,
+                        )
+                    except Exception as e:
+                        errors += 1
+                        processed += 1
+
+            except Exception as e:
+                await job_service.add_log(db, job_id, "warning", f"{source_name} search failed: {e}")
+
+        await job_service.add_log(db, job_id, "info", f"{source_name}: found {dir_found} new companies")
 
     await job_service.add_log(
         db, job_id, "info",

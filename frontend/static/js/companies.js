@@ -55,7 +55,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             const data = await api.get(`/api/companies?${params}`);
             const body = $("#companies-body");
             if (data.items.length === 0) {
-                body.innerHTML = '<tr><td colspan="10">No companies found</td></tr>';
+                body.innerHTML = '<tr><td colspan="11">No companies found</td></tr>';
             } else {
                 body.innerHTML = data.items.map(c => {
                     const city = c.city && c.city.trim() ? escapeHtml(c.city) : "—";
@@ -70,6 +70,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                         <td>${city}</td>
                         <td>${state}</td>
                         <td>${contacts}</td>
+                        <td>${sourceBadge(c.source)}</td>
                         <td><button class="btn-delete-co" onclick="deleteCompany(${c.id}, this)" title="Delete">&times;</button></td>
                     </tr>`;
                 }).join("");

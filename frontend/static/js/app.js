@@ -207,3 +207,28 @@ function companyLogo(domain, size = 20) {
     const fallbackUrl = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=${size}`;
     return `<img src="${logoUrl}" alt="" width="${size}" height="${size}" class="company-logo" onerror="this.onerror=null;this.src='${fallbackUrl}'">`;
 }
+
+const SOURCE_LABELS = {
+    "google_search": "Google",
+    "web": "Google",
+    "thomasnet": "ThomasNet",
+    "kompass": "Kompass",
+    "industrynet": "IndustryNet",
+    "manual": "Manual",
+};
+
+function sourceBadge(source) {
+    const label = SOURCE_LABELS[source] || source || "Unknown";
+    return `<span class="badge badge-source" title="Data source: ${escapeHtml(label)}">${escapeHtml(label)}</span>`;
+}
+
+function revenueSourceLabel(src) {
+    if (!src) return "";
+    const labels = {
+        "knowledge_graph": "Google Knowledge Graph",
+        "search_snippet": "Google Search",
+        "estimated": "Estimated from headcount",
+        "page_text": "Company website",
+    };
+    return labels[src] || src;
+}

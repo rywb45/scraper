@@ -562,6 +562,7 @@ legend {
 .badge-completed { background: var(--green-bg); color: #1a8a36; }
 .badge-failed { background: var(--red-bg); color: var(--red); }
 .badge-cancelled { background: var(--gray-bg); color: var(--gray); }
+.badge-source { background: var(--gray-bg); color: var(--text-secondary); }
 
 /* ========== Progress Bar ========== */
 .progress-bar {
