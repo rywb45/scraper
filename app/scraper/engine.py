@@ -11,6 +11,7 @@ from app.schemas.company import CompanyCreate
 from app.schemas.contact import ContactCreate
 from app.scraper.base import ScrapedCompany
 from app.scraper.extractors.contact_extractor import extract_contacts
+from app.scraper.extractors.data_enricher import enrich_company
 from app.scraper.extractors.email_discoverer import discover_email_pattern, generate_email_candidates
 from app.scraper.http_client import HttpClient
 from app.scraper.sources.google_search import GoogleSearchScraper
@@ -19,6 +20,20 @@ from app.services import company_service, contact_service, job_service
 logger = logging.getLogger(__name__)
 
 _active_jobs: dict[int, asyncio.Task] = {}
+
+
+async def cleanup_stale_jobs():
+    """Mark any 'running' or 'pending' jobs as failed on startup (orphaned from restart)."""
+    from sqlalchemy import select, update
+    async with async_session() as db:
+        result = await db.execute(
+            update(ScrapeJob)
+            .where(ScrapeJob.status.in_(["running", "pending"]))
+            .values(status="failed")
+        )
+        if result.rowcount:
+            await db.commit()
+            logger.info(f"Cleaned up {result.rowcount} stale job(s)")
 
 
 async def start_job(job_id: int):
@@ -50,6 +65,10 @@ async def _run_job(job_id: int):
 
             if job_type in ("discovery", "full"):
                 await _phase_discovery(db, job_id, industries)
+
+            # For enrichment-only jobs, run batch enrichment on existing companies
+            if job_type == "enrichment":
+                await _phase_data_enrichment(db, job_id)
 
             if job_type in ("enrichment", "full"):
                 await _phase_enrichment(db, job_id)
@@ -142,6 +161,63 @@ async def _phase_discovery(db, job_id: int, industries: list[str]):
         db, job_id, "info",
         f"Discovery complete: {companies_found} companies from {processed} URLs across {len(industries)} industries"
     )
+
+
+async def _phase_data_enrichment(db, job_id: int):
+    """Use Google search to fill in missing revenue, employee count, and location."""
+    await job_service.add_log(db, job_id, "info", "Starting data enrichment (revenue, employees, location)")
+
+    from sqlalchemy import select
+    from app.db.models import Company
+    from app.scraper.extractors.data_enricher import enrich_company
+
+    result = await db.execute(select(Company).where(Company.scrape_job_id == job_id))
+    companies = result.scalars().all()
+    enriched = 0
+
+    for company in companies:
+        await _check_job_status(db, job_id)
+
+        needs_revenue = not company.estimated_revenue
+        needs_employees = not company.employee_count
+        needs_state = not company.state
+
+        if not (needs_revenue or needs_employees or needs_state):
+            continue
+
+        try:
+            data = await enrich_company(company.name, company.domain)
+
+            updated = False
+            if needs_revenue and data["estimated_revenue"]:
+                company.estimated_revenue = data["estimated_revenue"]
+                company.revenue_source = data["revenue_source"]
+                updated = True
+            if needs_employees and data["employee_count"]:
+                company.employee_count = data["employee_count"]
+                company.employee_count_range = data["employee_count_range"]
+                updated = True
+            if needs_state and data["state"]:
+                company.state = data["state"]
+                company.city = data["city"]
+                updated = True
+
+            if updated:
+                await db.commit()
+                enriched += 1
+                await job_service.add_log(
+                    db, job_id, "info",
+                    f"Enriched {company.name}: "
+                    + ", ".join(filter(None, [
+                        data["estimated_revenue"] and f"rev={data['estimated_revenue']}",
+                        data["employee_count"] and f"emp={data['employee_count']}",
+                        data["state"] and f"loc={data['city']}, {data['state']}",
+                    ]))
+                )
+        except Exception as e:
+            await job_service.add_log(db, job_id, "warning", f"Enrich failed for {company.name}: {e}")
+
+    await job_service.add_log(db, job_id, "info", f"Data enrichment complete: {enriched}/{len(companies)} companies enriched")
 
 
 async def _phase_enrichment(db, job_id: int):
@@ -275,7 +351,49 @@ async def _save_company(db, job_id: int, data: ScrapedCompany):
         scrape_job_id=job_id,
     ))
     await job_service.add_log(db, job_id, "info", f"Found: {data.name} ({data.domain})", url=data.source_url)
+
+    # Enrich immediately — revenue, employees, location via Google search
+    try:
+        await _enrich_single_company(db, job_id, company)
+    except Exception as e:
+        await job_service.add_log(db, job_id, "warning", f"Enrich failed for {data.name}: {e}")
+
     return company
+
+
+async def _enrich_single_company(db, job_id: int, company):
+    """Enrich a single company with revenue, employee count, and location right after saving."""
+    needs_revenue = not company.estimated_revenue
+    needs_employees = not company.employee_count
+    needs_state = not company.state
+
+    if not (needs_revenue or needs_employees or needs_state):
+        return
+
+    data = await enrich_company(company.name, company.domain)
+
+    updated = False
+    if needs_revenue and data["estimated_revenue"]:
+        company.estimated_revenue = data["estimated_revenue"]
+        company.revenue_source = data["revenue_source"]
+        updated = True
+    if needs_employees and data["employee_count"]:
+        company.employee_count = data["employee_count"]
+        company.employee_count_range = data["employee_count_range"]
+        updated = True
+    if needs_state and data["state"]:
+        company.state = data["state"]
+        company.city = data["city"]
+        updated = True
+
+    if updated:
+        await db.commit()
+        enriched_fields = ", ".join(filter(None, [
+            data["estimated_revenue"] and f"rev={data['estimated_revenue']}",
+            data["employee_count"] and f"emp={data['employee_count']}",
+            data["state"] and f"loc={data['city']}, {data['state']}",
+        ]))
+        await job_service.add_log(db, job_id, "info", f"Enriched {company.name}: {enriched_fields}")
 
 
 async def _check_job_status(db, job_id: int):

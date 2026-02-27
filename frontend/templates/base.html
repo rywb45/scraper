@@ -21,10 +21,26 @@
                 <a href="/companies" {% if "/companies" in request.url.path %}class="active"{% endif %}>Companies</a>
                 <a href="/jobs" {% if "/jobs" in request.url.path %}class="active"{% endif %}>History</a>
             </div>
-            <button class="nav-scrape-btn" id="scrape-btn" onclick="quickScrape()">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-                Scrape
-            </button>
+            <div class="nav-right">
+                <span class="api-credits" id="api-credits" title="Serper API searches remaining"></span>
+                <div class="scrape-dropdown" id="scrape-dropdown">
+                    <button class="nav-scrape-btn" id="scrape-btn" onclick="toggleScrapeMenu(event)">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                        Scrape
+                    </button>
+                    <div class="scrape-menu" id="scrape-menu">
+                        <div class="scrape-menu-header">
+                            <label class="scrape-menu-selectall"><input type="checkbox" id="scrape-select-all" checked onchange="toggleAllIndustries(this)"> Select All</label>
+                        </div>
+                        <div class="scrape-menu-list" id="scrape-industry-list"></div>
+                        <div class="scrape-menu-add">
+                            <input type="text" id="scrape-new-industry" placeholder="Add industry..." onkeydown="if(event.key==='Enter')addCustomIndustry()">
+                            <button class="secondary" onclick="addCustomIndustry()" type="button">+</button>
+                        </div>
+                        <button class="scrape-menu-go" id="scrape-go-btn" onclick="runScrape()">Start Scrape</button>
+                    </div>
+                </div>
+            </div>
         </div>
     </nav>
     <main class="main-content">

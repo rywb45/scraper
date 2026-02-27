@@ -7,6 +7,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.db.database import init_db
 from app.routers import companies, contacts, export, jobs, stats
+from app.scraper.engine import cleanup_stale_jobs
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
@@ -14,6 +15,7 @@ FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    await cleanup_stale_jobs()
     yield
 
 

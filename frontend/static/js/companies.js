@@ -43,7 +43,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             const data = await api.get(`/api/companies?${params}`);
             const body = $("#companies-body");
             if (data.items.length === 0) {
-                body.innerHTML = '<tr><td colspan="8">No companies found</td></tr>';
+                body.innerHTML = '<tr><td colspan="9">No companies found</td></tr>';
             } else {
                 body.innerHTML = data.items.map(c => `
                     <tr>
@@ -54,6 +54,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                         <td>${c.estimated_revenue ? `<strong>${escapeHtml(c.estimated_revenue)}</strong>${c.revenue_source === "estimated" ? " <small>(est)</small>" : ""}` : "—"}</td>
                         <td>${escapeHtml(c.state || "—")}</td>
                         <td>${c.contact_count}</td>
+                        <td><button class="btn-delete-co" onclick="deleteCompany(${c.id}, this)" title="Delete">&times;</button></td>
                     </tr>
                 `).join("");
             }
@@ -120,5 +121,19 @@ document.addEventListener("DOMContentLoaded", async () => {
         window.location.href = `/api/export/csv?${params}`;
     });
 
+    // Expose for delete callback
+    window._reloadCompanies = loadCompanies;
     loadCompanies();
 });
+
+async function deleteCompany(id, btn) {
+    if (!confirm("Delete this company?")) return;
+    btn.disabled = true;
+    try {
+        await api.del(`/api/companies/${id}`);
+        if (window._reloadCompanies) window._reloadCompanies();
+    } catch (e) {
+        console.error("Delete error:", e);
+        btn.disabled = false;
+    }
+}
