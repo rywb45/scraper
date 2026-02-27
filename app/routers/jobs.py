@@ -54,6 +54,8 @@ async def create_job(data: JobCreate, db: AsyncSession = Depends(get_db)):
     config = {**data.config}
     if data.sources:
         config["sources"] = data.sources
+    if data.location:
+        config["location"] = data.location
     job = ScrapeJob(
         name=data.name,
         job_type=data.job_type,

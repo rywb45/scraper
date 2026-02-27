@@ -227,6 +227,23 @@ a:hover {
     background: var(--gray-bg);
 }
 
+.scrape-menu-location {
+    padding: 0.25rem 0.85rem 0.5rem;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.scrape-menu-location input {
+    height: 32px;
+    font-size: 12px;
+    padding: 0 0.6rem;
+}
+
+.scrape-menu-section-label small {
+    font-weight: 500;
+    text-transform: none;
+    letter-spacing: normal;
+}
+
 .scrape-menu-header {
     padding: 0.65rem 0.85rem;
     border-bottom: 1px solid var(--border-light);

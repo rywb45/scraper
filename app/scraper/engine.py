@@ -67,9 +67,10 @@ async def _run_job(job_id: int):
             job_type = job.job_type or "full"
             config = json.loads(job.config or "{}")
             sources = config.get("sources", [])  # empty = all sources
+            location = config.get("location", "")
 
             if job_type in ("discovery", "full"):
-                await _phase_discovery(db, job_id, industries, sources)
+                await _phase_discovery(db, job_id, industries, sources, location)
 
             # For enrichment-only jobs, run batch enrichment on existing companies
             if job_type == "enrichment":
@@ -93,7 +94,7 @@ async def _run_job(job_id: int):
             await job_service.add_log(db, job_id, "error", f"Job failed: {e}")
 
 
-async def _phase_discovery(db, job_id: int, industries: list[str], sources: list[str] | None = None):
+async def _phase_discovery(db, job_id: int, industries: list[str], sources: list[str] | None = None, location: str = ""):
     await job_service.add_log(db, job_id, "info", "Starting discovery phase")
     run_google = not sources or "google" in sources
     run_thomasnet = not sources or "thomasnet" in sources
@@ -109,7 +110,10 @@ async def _phase_discovery(db, job_id: int, industries: list[str], sources: list
         source_names.append("Kompass")
     if run_industrynet:
         source_names.append("IndustryNet")
-    await job_service.add_log(db, job_id, "info", f"Sources: {', '.join(source_names)}")
+    info = f"Sources: {', '.join(source_names)}"
+    if location:
+        info += f" | Location: {location}"
+    await job_service.add_log(db, job_id, "info", info)
 
     scraper = GoogleSearchScraper()
 
@@ -123,7 +127,7 @@ async def _phase_discovery(db, job_id: int, industries: list[str], sources: list
     if run_google:
         for industry in industries:
             await _check_job_status(db, job_id)
-            queries = generate_queries(industry)
+            queries = generate_queries(industry, location=location)
             await job_service.add_log(db, job_id, "info", f"Searching {industry} ({len(queries)} queries)")
 
             for query in queries:
@@ -197,7 +201,8 @@ async def _phase_discovery(db, job_id: int, industries: list[str], sources: list
         for industry in industries:
             await _check_job_status(db, job_id)
             try:
-                results = await dir_scraper.search(industry, num_results=10)
+                search_query = f"{industry} {location}" if location else industry
+                results = await dir_scraper.search(search_query, num_results=10)
                 if not results:
                     continue
 

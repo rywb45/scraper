@@ -8,6 +8,7 @@ class JobCreate(BaseModel):
     job_type: str = "full"  # discovery, enrichment, full
     industries: list[str] = []
     sources: list[str] = []  # google, thomasnet, kompass, industrynet (empty = all)
+    location: str = ""  # optional geographic filter e.g. "Texas", "Chicago IL"
     config: dict = {}
 
 

@@ -168,13 +168,16 @@ async function runScrape() {
 
     try {
         const date = new Date().toLocaleDateString("en-US", {month: "short", day: "numeric"});
+        const location = ($("#scrape-location")?.value || "").trim();
         const srcLabel = selectedSources.length === 4 ? "" : " (" + selectedSources.join(", ") + ")";
+        const locLabel = location ? " — " + location : "";
         const label = selected.length === _scrapeIndustries.length ? "All Industries" : selected.length + " Industries";
         const job = await api.post("/api/jobs", {
-            name: label + srcLabel + " — " + date,
+            name: label + srcLabel + locLabel + " — " + date,
             job_type: "full",
             industries: selected,
             sources: selectedSources,
+            location: location || undefined,
         });
         await api.post(`/api/jobs/${job.id}/start`);
         window.location.href = `/jobs/${job.id}`;
