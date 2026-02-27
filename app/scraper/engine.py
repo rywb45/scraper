@@ -160,7 +160,7 @@ async def _phase_discovery(db, job_id: int, industries: list[str]):
                 errors += 1
                 await job_service.add_log(db, job_id, "warning", f"Search failed: {e}")
 
-    # Phase 2: Directory sources (ThomasNet, Kompass, IndustryNet) — no API credits used
+    # Phase 2: Directory sources (ThomasNet, Kompass, IndustryNet) — uses site: Google searches
     directory_scrapers = [
         ("ThomasNet", ThomasNetScraper()),
         ("Kompass", KompassScraper()),
@@ -175,14 +175,14 @@ async def _phase_discovery(db, job_id: int, industries: list[str]):
         for industry in industries:
             await _check_job_status(db, job_id)
             try:
-                urls = await dir_scraper.search(industry, num_results=20)
-                if not urls:
+                results = await dir_scraper.search(industry, num_results=10)
+                if not results:
                     continue
 
-                for url in urls:
+                for result in results:
                     await _check_job_status(db, job_id)
                     try:
-                        company_data = await dir_scraper.scrape_company(url)
+                        company_data = await dir_scraper.scrape_company(result)
                         processed += 1
 
                         if company_data and company_data.name and company_data.domain:

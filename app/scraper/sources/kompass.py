@@ -1,75 +1,202 @@
-from urllib.parse import urljoin, urlparse
+import re
+from urllib.parse import urlparse
 
-from bs4 import BeautifulSoup
+import httpx
 
+from app.config import settings
 from app.scraper.base import BaseScraper, ScrapedCompany
 from app.scraper.http_client import HttpClient
+from app.scraper.extractors.company_extractor import extract_company
 
 
 class KompassScraper(BaseScraper):
+    """Find companies listed on Kompass via Google site: search,
+    then scrape the company's own website for details."""
+
     name = "kompass"
-    BASE_URL = "https://us.kompass.com"
 
     def __init__(self):
         self.http = HttpClient()
 
-    async def search(self, query: str, num_results: int = 10) -> list[str]:
-        search_url = f"{self.BASE_URL}/searchCompanies?text={query.replace(' ', '+')}"
-        resp = await self.http.get(search_url)
-        if not resp:
+    async def search(self, query: str, num_results: int = 10) -> list[dict]:
+        """Search Google for Kompass company profiles."""
+        if not settings.serp_api_key:
             return []
 
-        soup = BeautifulSoup(resp.text, "lxml")
-        urls = []
-        for link in soup.select("a.companyName, h2 a"):
-            href = link.get("href", "")
-            if href and "/company/" in href:
-                urls.append(urljoin(self.BASE_URL, href))
-            if len(urls) >= num_results:
-                break
-        return urls
+        search_query = f"site:kompass.com/company {query} manufacturer supplier USA"
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.post(
+                    "https://google.serper.dev/search",
+                    json={"q": search_query, "num": num_results, "gl": "us"},
+                    headers={"X-API-KEY": settings.serp_api_key},
+                )
+                resp.raise_for_status()
+                data = resp.json()
 
-    async def scrape_company(self, url: str) -> ScrapedCompany | None:
-        resp = await self.http.get(url)
-        if not resp:
+                results = []
+                for r in data.get("organic", []):
+                    link = r.get("link", "")
+                    if not link or "/company/" not in link:
+                        continue
+                    results.append({
+                        "url": link,
+                        "title": r.get("title", ""),
+                        "snippet": r.get("snippet", ""),
+                    })
+                    if len(results) >= num_results:
+                        break
+                return results
+        except Exception:
+            return []
+
+    async def scrape_company(self, result: dict | str) -> ScrapedCompany | None:
+        """Extract company info from a Kompass search result."""
+        if isinstance(result, str):
             return None
 
-        soup = BeautifulSoup(resp.text, "lxml")
-        company = ScrapedCompany(source="kompass", source_url=url)
+        title = result.get("title", "")
+        snippet = result.get("snippet", "")
+        source_url = result.get("url", "")
 
-        name_el = soup.select_one("h1, .company-name")
-        if name_el:
-            company.name = name_el.get_text(strip=True)
-
-        desc_el = soup.select_one(".company-description, .presentation")
-        if desc_el:
-            company.description = desc_el.get_text(strip=True)[:1000]
-
-        # Address
-        addr_el = soup.select_one(".address, .company-address")
-        if addr_el:
-            text = addr_el.get_text(strip=True)
-            parts = text.rsplit(",", 2)
-            if len(parts) >= 2:
-                company.city = parts[-2].strip()
-                state_parts = parts[-1].strip().split()
-                if state_parts:
-                    company.state = state_parts[0]
-
-        # Website
-        for a in soup.select("a[href]"):
-            href = a.get("href", "")
-            text = a.get_text(strip=True).lower()
-            if "website" in text or ("http" in href and urlparse(href).netloc not in url):
-                if href.startswith("http"):
-                    company.website = href
-                    company.domain = urlparse(href).netloc.lower().removeprefix("www.")
-                    break
-
-        phone_el = soup.select_one(".phone, .tel")
-        if phone_el:
-            company.phone = phone_el.get_text(strip=True)
-
-        if not company.name:
+        name = _extract_name_from_title(title)
+        if not name:
             return None
+
+        # Try to get website from Kompass page (may fail due to Cloudflare)
+        company_website = None
+        company_domain = None
+
+        try:
+            resp = await self.http.get(source_url)
+            if resp and resp.text:
+                website_match = re.search(
+                    r'(?:href=["\'])?(https?://(?!(?:www\.)?kompass\.com)[a-zA-Z0-9.-]+\.[a-z]{2,}[^"\'<>\s]*)',
+                    resp.text,
+                )
+                if website_match:
+                    url = website_match.group(1)
+                    parsed = urlparse(url)
+                    domain = parsed.netloc.lower().removeprefix("www.")
+                    if domain and "." in domain and not _is_social_domain(domain):
+                        company_website = f"{parsed.scheme}://{parsed.netloc}"
+                        company_domain = domain
+        except Exception:
+            pass
+
+        if not company_domain:
+            company_domain, company_website = await _find_company_website(name)
+
+        if not company_domain:
+            return None
+
+        company = ScrapedCompany(
+            name=name,
+            domain=company_domain,
+            website=company_website or "",
+            source="kompass",
+            source_url=source_url,
+        )
+
+        # Extract location from snippet
+        city, state = _extract_location_from_snippet(snippet)
+        if city:
+            company.city = city
+        if state:
+            company.state = state
+
+        # Try scraping the company's own website
+        if company_website:
+            try:
+                resp = await self.http.get(company_website)
+                if resp and resp.text:
+                    scraped = extract_company(company_website, resp.text)
+                    if scraped:
+                        if scraped.description:
+                            company.description = scraped.description
+                        if scraped.phone:
+                            company.phone = scraped.phone
+                        if scraped.city and not company.city:
+                            company.city = scraped.city
+                        if scraped.state and not company.state:
+                            company.state = scraped.state
+                        if scraped.zip_code:
+                            company.zip_code = scraped.zip_code
+                        if scraped.employee_count:
+                            company.employee_count = scraped.employee_count
+                        if scraped.employee_count_range:
+                            company.employee_count_range = scraped.employee_count_range
+                        if scraped.estimated_revenue:
+                            company.estimated_revenue = scraped.estimated_revenue
+                            company.revenue_source = scraped.revenue_source
+            except Exception:
+                pass
+
         return company
+
+
+def _extract_name_from_title(title: str) -> str:
+    if not title:
+        return ""
+    for sep in [" - ", " | ", " — ", " – "]:
+        if sep in title:
+            title = title.split(sep)[0]
+            break
+    name = title.strip()
+    return name[:200] if len(name) >= 2 else ""
+
+
+def _extract_location_from_snippet(snippet: str) -> tuple[str, str]:
+    US_STATES = {
+        "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
+        "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
+        "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
+        "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
+        "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC",
+    }
+    match = re.search(r"([A-Z][a-z]+(?:\s[A-Z][a-z]+)*),\s*([A-Z]{2})\b", snippet)
+    if match and match.group(2) in US_STATES:
+        return match.group(1).strip(), match.group(2)
+    return "", ""
+
+
+async def _find_company_website(name: str) -> tuple[str, str]:
+    if not settings.serp_api_key:
+        return "", ""
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(
+                "https://google.serper.dev/search",
+                json={"q": f"{name} official website", "num": 3, "gl": "us"},
+                headers={"X-API-KEY": settings.serp_api_key},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            for r in data.get("organic", []):
+                link = r.get("link", "")
+                if not link:
+                    continue
+                parsed = urlparse(link)
+                domain = parsed.netloc.lower().removeprefix("www.")
+                if domain and "." in domain and not _is_social_domain(domain):
+                    return domain, f"{parsed.scheme}://{parsed.netloc}"
+    except Exception:
+        pass
+    return "", ""
+
+
+SOCIAL_DOMAINS = {
+    "wikipedia.org", "youtube.com", "facebook.com", "twitter.com",
+    "linkedin.com", "instagram.com", "reddit.com", "yelp.com",
+    "indeed.com", "glassdoor.com", "bbb.org", "crunchbase.com",
+    "thomasnet.com", "kompass.com", "industrynet.com",
+    "bloomberg.com", "reuters.com", "forbes.com",
+    "amazon.com", "ebay.com", "google.com", "yahoo.com",
+}
+
+
+def _is_social_domain(domain: str) -> bool:
+    for d in SOCIAL_DOMAINS:
+        if domain == d or domain.endswith(f".{d}"):
+            return True
+    return False
