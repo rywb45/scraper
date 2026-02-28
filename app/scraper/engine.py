@@ -550,7 +550,7 @@ async def _phase_enrichment(db, job_id: int):
                     ))
                     contacts_found += 1
                 except Exception:
-                    pass
+                    await db.rollback()
         await db.commit()
         await job_service.update_job_progress(db, job_id, contacts_found=contacts_found)
 
