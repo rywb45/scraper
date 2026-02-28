@@ -88,6 +88,9 @@ def extract_name_from_title(title: str) -> str:
             title = parts[0]
     # Strip address fragments (Kompass embeds addresses in titles)
     title = _strip_address(title)
+    # Remove trailing colons and unicode symbols
+    title = re.sub(r'[:.]+\s*$', '', title).strip()
+    title = re.sub(r'^[^\w\s]+\s*', '', title).strip()
     name = title.strip()
     return name[:200] if len(name) >= 2 else ""
 

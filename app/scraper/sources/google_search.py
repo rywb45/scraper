@@ -107,6 +107,10 @@ class GoogleSearchScraper(BaseScraper):
             if domain == skip or domain.endswith(f".{skip}"):
                 return False
 
+        # Skip all government domains
+        if domain.endswith(".gov"):
+            return False
+
         # Skip public/enterprise companies
         if is_public_company_domain(domain):
             return False

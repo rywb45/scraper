@@ -284,7 +284,7 @@ async def _phase_discovery(db, job_id: int, industries: list[str], sources: list
 
                             # Clean company name from title
                             name = _clean_company_name(title)
-                            if not name or not domain:
+                            if not name or not domain or _is_generic_title(name):
                                 processed += 1
                                 await job_service.update_job_progress(db, job_id, processed_urls=processed)
                                 continue
@@ -617,24 +617,37 @@ _STREET_SUFFIX = re.compile(
 )
 
 
+_GENERIC_PAGE_WORDS = {
+    "home", "products", "services", "about", "about us", "contact", "contact us",
+    "welcome", "homepage", "official site", "home page", "locations",
+    "united states", "usa", "us", "overview", "solutions", "resources",
+    "blog", "news", "careers", "team", "our team",
+}
+
+
 def _clean_company_name(title: str) -> str:
     """Clean a company name from a Google search result title.
 
-    Strips common suffixes like ' | Company', ' - Home', ' - Official Site',
-    and address fragments like ', 123 Main Street'.
+    Strips page-title separators, address fragments, trailing colons,
+    and generic page words. Picks the more brand-like part when split.
     """
     if not title:
         return ""
-    # Remove common suffixes
+    # Split on common title separators and pick the best part
     for sep in [" | ", " - ", " — ", " – "]:
         if sep in title:
-            parts = title.split(sep)
-            # Take the first part unless it's very short
-            if len(parts[0].strip()) >= 2:
-                title = parts[0].strip()
+            parts = [p.strip() for p in title.split(sep) if p.strip()]
+            if len(parts) >= 2:
+                title = _pick_brand_part(parts)
             break
-    # Remove trailing generic words
-    title = re.sub(r"\s*(?:Home|Official Site|Homepage|Welcome)\s*$", "", title, flags=re.IGNORECASE).strip()
+    # Split on colon — "Brand: Tagline" or "Category: Brand"
+    if ": " in title:
+        before, after = title.split(": ", 1)
+        before, after = before.strip(), after.strip()
+        if before and after:
+            title = _pick_brand_part([before, after])
+    # Remove trailing generic page-title words
+    title = re.sub(r"\s*(?:Home|Official Site|Homepage|Welcome|Home Page)\s*$", "", title, flags=re.IGNORECASE).strip()
     # Strip address fragments
     m = _ADDRESS_START.search(title)
     if m:
@@ -642,9 +655,71 @@ def _clean_company_name(title: str) -> str:
     m = _STREET_SUFFIX.search(title)
     if m:
         title = title[:m.start()].strip()
-    # Remove trailing ellipsis
+    # Remove trailing colons (but not periods — they can be part of Inc., Co., etc.)
+    title = re.sub(r':+\s*$', '', title).strip()
     title = re.sub(r'\.{2,}\s*$', '', title).strip()
+    title = re.sub(r'^[^\w\s]+\s*', '', title).strip()
     return title[:200] if len(title) >= 2 else ""
+
+
+def _pick_brand_part(parts: list[str]) -> str:
+    """Given title parts split by separator, return the most brand-like one.
+
+    Prefers parts that look like company names over generic page words.
+    """
+    # Filter out generic page words
+    non_generic = [p for p in parts if p.lower() not in _GENERIC_PAGE_WORDS]
+    if len(non_generic) == 1:
+        return non_generic[0]
+    # If all or none are generic, check for company indicators
+    candidates = non_generic or parts
+    for p in candidates:
+        if re.search(r'\b(?:Inc|LLC|Ltd|Corp|Co|Group|Industries|International)\b', p, re.IGNORECASE):
+            return p
+    # Default: first part (standard "Brand - Tagline" format)
+    return candidates[0]
+
+
+def _is_generic_title(name: str) -> bool:
+    """Return True if the name is a generic industry description, not a company name.
+
+    Only filters names that are clearly page titles / category headings, NOT
+    company names that happen to include industry terms (e.g. "Valtris Specialty Chemicals" is fine).
+    """
+    lower = name.lower().strip()
+    # Starts with generic descriptors
+    if re.match(r"^(?:top|best|leading|list of|largest)\s", lower):
+        return True
+    # Single generic words that are never company names
+    single_word_generic = {
+        "products", "services", "industrial", "commercial", "residential",
+        "adhesives", "chemicals", "coatings", "materials", "solutions",
+        "home", "about", "contact", "locations", "overview", "resources",
+    }
+    if lower in single_word_generic:
+        return True
+    # Exact generic patterns — these read as category headings, not brands
+    generic_exact = {
+        "chemical manufacturing",
+        "chemical manufacturer",
+        "chemical supplier",
+        "specialty chemicals",
+        "industrial chemicals",
+        "product finder",
+        "adhesives and sealants",
+    }
+    if lower in generic_exact:
+        return True
+    # Patterns that are clearly page categories
+    if re.match(r"^[\w\s&,]+\b(?:companies|supplier & distributor|distribution in)\b", lower):
+        return True
+    # "X Product Finder", "X Supplier & Distributor" (utility page titles)
+    if lower.endswith("product finder") or lower.endswith("supplier & distributor"):
+        return True
+    # Starts with "Company Snapshot" or similar report/database titles
+    if lower.startswith("company snapshot"):
+        return True
+    return False
 
 
 def _apply_kg_to_company(kg: dict, company: ScrapedCompany):
