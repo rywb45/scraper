@@ -324,17 +324,13 @@ async def _phase_enrichment(db, job_id: int):
         base = company.website.rstrip("/")
         contact_pages = [
             f"{base}/contact",
-            f"{base}/contact-us",
             f"{base}/about",
-            f"{base}/about-us",
             f"{base}/team",
-            f"{base}/our-team",
-            f"{base}/leadership",
         ]
 
         for page_url in contact_pages:
             try:
-                resp = await http.get(page_url)
+                resp = await asyncio.wait_for(http.get(page_url), timeout=15)
                 if resp and resp.status_code == 200:
                     page_html = resp.text
                     contacts = extract_contacts(page_html, source_url=page_url)
