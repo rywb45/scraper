@@ -2,25 +2,48 @@
 {% block title %}Job Detail - Lead Scraper{% endblock %}
 {% block content %}
 <a href="/jobs" class="back-link">&larr; Jobs</a>
-<h2 id="job-name">Loading...</h2>
+<div class="page-header">
+    <h2 id="job-name">Loading...</h2>
+    <div class="actions-row" id="job-actions"></div>
+</div>
 
 <div class="stat-grid" id="job-stats">
-    <div class="stat-card"><div class="stat-value" id="js-status">—</div><div class="stat-label">Status</div></div>
-    <div class="stat-card"><div class="stat-value" id="js-companies">—</div><div class="stat-label">Companies</div></div>
-    <div class="stat-card"><div class="stat-value" id="js-contacts">—</div><div class="stat-label">Contacts</div></div>
-    <div class="stat-card"><div class="stat-value" id="js-errors">—</div><div class="stat-label">Errors</div></div>
+    <div class="stat-card">
+        <div class="stat-value" id="js-status">—</div>
+        <div class="stat-label">Status</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="js-companies">—</div>
+        <div class="stat-label">Companies</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="js-contacts">—</div>
+        <div class="stat-label">Contacts</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="js-elapsed">—</div>
+        <div class="stat-label">Elapsed</div>
+    </div>
 </div>
 
 <section>
-    <h4>Progress</h4>
-    <div id="job-progress"></div>
+    <h4>Pipeline</h4>
+    <div class="pipeline" id="pipeline"></div>
 </section>
 
-<div class="actions-row" id="job-actions"></div>
+<section>
+    <h4>Live Activity</h4>
+    <div class="activity-feed" id="activity-feed">
+        <p class="activity-empty">Waiting for activity...</p>
+    </div>
+</section>
 
 <section>
-    <h4>Log Feed</h4>
-    <div class="log-feed" id="log-feed">
+    <div class="log-toggle">
+        <h4 style="margin-bottom:0">Full Log</h4>
+        <button class="secondary" onclick="toggleLogFeed()" id="log-toggle-btn" style="font-size:12px;padding:0.3rem 0.7rem">Show</button>
+    </div>
+    <div class="log-feed" id="log-feed" style="display:none">
         <p>No logs yet.</p>
     </div>
 </section>
