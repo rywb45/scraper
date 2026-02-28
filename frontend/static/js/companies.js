@@ -66,7 +66,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                         <td>${c.website ? `<a href="${escapeHtml(c.website)}" target="_blank" rel="noopener">${escapeHtml(c.domain)}</a>` : escapeHtml(c.domain || "—")}</td>
                         <td>${escapeHtml(c.industry || "—")}</td>
                         <td>${escapeHtml(c.employee_count_range || (c.employee_count ? c.employee_count.toLocaleString() : "—"))}</td>
-                        <td>${c.estimated_revenue ? `<strong>${escapeHtml(c.estimated_revenue)}</strong>${c.revenue_source === "estimated" ? " <small>(est)</small>" : ""}` : "—"}</td>
+                        <td>${formatRevenue(c)}</td>
                         <td>${city}</td>
                         <td>${state}</td>
                         <td>${contacts}</td>

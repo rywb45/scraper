@@ -7,14 +7,11 @@ from app.schemas.company import CompanyCreate, CompanyUpdate
 
 
 REVENUE_BRACKETS = {
-    "under_1m": (None, 1_000_000),
-    "1m_10m": (1_000_000, 10_000_000),
-    "10m_50m": (10_000_000, 50_000_000),
-    "50m_100m": (50_000_000, 100_000_000),
-    "100m_200m": (100_000_000, 200_000_000),
-    "200m_500m": (200_000_000, 500_000_000),
-    "500m_1b": (500_000_000, 1_000_000_000),
-    "over_1b": (1_000_000_000, None),
+    "target": (80_000_000, 2_000_000_000),
+    "sweet_spot": (150_000_000, 800_000_000),
+    "unknown": "unknown",
+    "under_80m": (None, 80_000_000),
+    "over_2b": (2_000_000_000, None),
 }
 
 
@@ -68,22 +65,28 @@ async def get_companies(
 
     # Revenue bracket filtering — needs Python since revenue is a formatted string
     if revenue_bracket and revenue_bracket in REVENUE_BRACKETS:
-        low, high = REVENUE_BRACKETS[revenue_bracket]
-        # Must filter in Python, so fetch all matching IDs first
-        all_result = await db.execute(query.with_only_columns(Company.id, Company.estimated_revenue))
-        matching_ids = []
-        for cid, rev_str in all_result.all():
-            val = _parse_revenue_to_number(rev_str)
-            if val is None:
-                continue
-            if low is not None and val < low:
-                continue
-            if high is not None and val >= high:
-                continue
-            matching_ids.append(cid)
-        if not matching_ids:
-            return {"items": [], "total": 0, "page": page, "per_page": per_page, "pages": 1}
-        query = select(Company).where(Company.id.in_(matching_ids))
+        bracket = REVENUE_BRACKETS[revenue_bracket]
+        if bracket == "unknown":
+            # Companies with no revenue data at all
+            query = query.where(
+                (Company.estimated_revenue.is_(None)) | (Company.estimated_revenue == "")
+            )
+        else:
+            low, high = bracket
+            all_result = await db.execute(query.with_only_columns(Company.id, Company.estimated_revenue))
+            matching_ids = []
+            for cid, rev_str in all_result.all():
+                val = _parse_revenue_to_number(rev_str)
+                if val is None:
+                    continue
+                if low is not None and val < low:
+                    continue
+                if high is not None and val >= high:
+                    continue
+                matching_ids.append(cid)
+            if not matching_ids:
+                return {"items": [], "total": 0, "page": page, "per_page": per_page, "pages": 1}
+            query = select(Company).where(Company.id.in_(matching_ids))
 
     # Count
     count_query = select(func.count()).select_from(query.subquery())

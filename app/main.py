@@ -54,11 +54,6 @@ async def jobs_page(request: Request):
     return templates.TemplateResponse("jobs.html", {"request": request})
 
 
-@app.get("/jobs/new")
-async def new_job_page(request: Request):
-    return templates.TemplateResponse("job_new.html", {"request": request})
-
-
 @app.get("/jobs/{job_id}")
 async def job_detail_page(request: Request, job_id: int):
     return templates.TemplateResponse("job_detail.html", {"request": request, "job_id": job_id})

@@ -3,6 +3,8 @@ import json
 import logging
 from urllib.parse import urlparse
 
+import httpx
+
 from app.config import settings
 from app.db.database import async_session
 from app.db.models import ScrapeJob
@@ -21,6 +23,59 @@ from app.scraper.sources.industrynet import IndustryNetScraper
 from app.services import company_service, contact_service, job_service
 
 logger = logging.getLogger(__name__)
+
+# US state names and abbreviations for location matching
+_STATE_NAMES = {
+    "AL": "alabama", "AK": "alaska", "AZ": "arizona", "AR": "arkansas",
+    "CA": "california", "CO": "colorado", "CT": "connecticut", "DE": "delaware",
+    "FL": "florida", "GA": "georgia", "HI": "hawaii", "ID": "idaho",
+    "IL": "illinois", "IN": "indiana", "IA": "iowa", "KS": "kansas",
+    "KY": "kentucky", "LA": "louisiana", "ME": "maine", "MD": "maryland",
+    "MA": "massachusetts", "MI": "michigan", "MN": "minnesota", "MS": "mississippi",
+    "MO": "missouri", "MT": "montana", "NE": "nebraska", "NV": "nevada",
+    "NH": "new hampshire", "NJ": "new jersey", "NM": "new mexico", "NY": "new york",
+    "NC": "north carolina", "ND": "north dakota", "OH": "ohio", "OK": "oklahoma",
+    "OR": "oregon", "PA": "pennsylvania", "RI": "rhode island", "SC": "south carolina",
+    "SD": "south dakota", "TN": "tennessee", "TX": "texas", "UT": "utah",
+    "VT": "vermont", "VA": "virginia", "WA": "washington", "WV": "west virginia",
+    "WI": "wisconsin", "WY": "wyoming", "DC": "district of columbia",
+}
+_NAME_TO_ABBREV = {v: k for k, v in _STATE_NAMES.items()}
+
+
+def _location_matches(company_state: str, company_city: str, requested_location: str) -> bool:
+    """Check if a company's location matches the requested location filter.
+    Returns True if no location filter, or if the company matches, or if
+    the company has no location data (benefit of the doubt)."""
+    if not requested_location:
+        return True
+    # No location data on the company — keep it, don't discard unknowns
+    if not company_state and not company_city:
+        return True
+
+    loc = requested_location.lower().strip()
+    state = (company_state or "").lower().strip()
+    city = (company_city or "").lower().strip()
+
+    # Direct match on state abbreviation or name
+    if state:
+        state_name = _STATE_NAMES.get(state.upper(), state)
+        if loc in (state, state_name, state.upper()):
+            return True
+        # Check if location input is the full state name
+        if loc in _NAME_TO_ABBREV and _NAME_TO_ABBREV[loc] == state.upper():
+            return True
+
+    # Direct match on city
+    if city and loc in city:
+        return True
+
+    # "City, ST" or "City ST" format in the requested location
+    if city and state:
+        if city in loc or state in loc or _STATE_NAMES.get(state.upper(), "") in loc:
+            return True
+
+    return False
 
 _active_jobs: dict[int, asyncio.Task] = {}
 
@@ -134,7 +189,7 @@ async def _phase_discovery(db, job_id: int, industries: list[str], sources: list
                 await _check_job_status(db, job_id)
 
                 try:
-                    urls = await scraper.search(query, num_results=10)
+                    urls = await scraper.search(query, num_results=10, location=location)
                     if not urls:
                         continue
 
@@ -164,6 +219,11 @@ async def _phase_discovery(db, job_id: int, industries: list[str], sources: list
                                 company_data.industry = industry
                                 saved = await _save_company(db, job_id, company_data)
                                 if saved:
+                                    # Check location filter after enrichment
+                                    if location and not _location_matches(saved.state, saved.city, location):
+                                        await db.delete(saved)
+                                        await db.commit()
+                                        continue
                                     companies_found += 1
 
                             await job_service.update_job_progress(
@@ -225,6 +285,10 @@ async def _phase_discovery(db, job_id: int, industries: list[str], sources: list
                             company_data.industry = industry
                             saved = await _save_company(db, job_id, company_data)
                             if saved:
+                                if location and not _location_matches(saved.state, saved.city, location):
+                                    await db.delete(saved)
+                                    await db.commit()
+                                    continue
                                 companies_found += 1
                                 dir_found += 1
 
@@ -308,7 +372,6 @@ async def _phase_data_enrichment(db, job_id: int):
 
 async def _phase_enrichment(db, job_id: int):
     await job_service.add_log(db, job_id, "info", "Starting contact enrichment phase")
-    http = HttpClient()
 
     from sqlalchemy import select
     from app.db.models import Company
@@ -316,66 +379,87 @@ async def _phase_enrichment(db, job_id: int):
     companies = result.scalars().all()
     contacts_found = 0
 
-    for company in companies:
-        await _check_job_status(db, job_id)
+    async def _fetch_page(url: str) -> str | None:
+        """Fast page fetch — no rate limiting, short timeout, no retries."""
+        try:
+            async with httpx.AsyncClient(timeout=8, follow_redirects=True, headers={
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "text/html,*/*;q=0.8",
+            }) as client:
+                resp = await client.get(url)
+                if resp.status_code == 200:
+                    return resp.text
+        except Exception:
+            pass
+        return None
+
+    async def _enrich_company_contacts(company):
+        """Fetch all contact pages for one company concurrently."""
         if not company.website:
-            continue
-
+            return []
         base = company.website.rstrip("/")
-        contact_pages = [
-            f"{base}/contact",
-            f"{base}/about",
-            f"{base}/team",
-        ]
+        pages = [f"{base}/contact", f"{base}/about", f"{base}/team"]
+        results = await asyncio.gather(*[_fetch_page(url) for url in pages], return_exceptions=True)
 
-        for page_url in contact_pages:
-            try:
-                resp = await asyncio.wait_for(http.get(page_url), timeout=15)
-                if resp and resp.status_code == 200:
-                    page_html = resp.text
-                    contacts = extract_contacts(page_html, source_url=page_url)
-                    for c in contacts:
-                        try:
-                            await contact_service.create_contact(db, ContactCreate(
-                                company_id=company.id,
-                                first_name=c.first_name, last_name=c.last_name,
-                                full_name=c.full_name, title=c.title,
-                                email=c.email, email_confidence=c.email_confidence,
-                                phone=c.phone, linkedin_url=c.linkedin_url,
-                                source=c.source, source_url=c.source_url,
-                            ))
-                            contacts_found += 1
-                        except Exception:
-                            pass
+        found = []
+        for page_url, html in zip(pages, results):
+            if isinstance(html, Exception) or not html:
+                continue
+            contacts = extract_contacts(html, source_url=page_url)
+            found.extend(contacts)
 
-                    # Try to fill in missing revenue/employee data from about pages
-                    if not company.estimated_revenue or not company.employee_count:
-                        from app.scraper.extractors.revenue_extractor import (
-                            estimate_revenue, extract_employee_count, extract_revenue,
-                        )
-                        if not company.estimated_revenue:
-                            rev, rev_src = extract_revenue(page_html)
-                            if rev:
-                                company.estimated_revenue = rev
-                                company.revenue_source = rev_src
-                        if not company.employee_count:
-                            emp, emp_range = extract_employee_count(page_html)
-                            if emp:
-                                company.employee_count = emp
-                                if emp_range:
-                                    company.employee_count_range = emp_range
-                        if not company.estimated_revenue and company.employee_count:
-                            est_rev, est_src = estimate_revenue(
-                                company.employee_count, company.employee_count_range or "",
-                                company.industry or ""
-                            )
-                            if est_rev:
-                                company.estimated_revenue = est_rev
-                                company.revenue_source = est_src
-                        await db.commit()
-            except Exception:
-                pass
+            # Try to fill in missing revenue/employee data from about pages
+            if not company.estimated_revenue or not company.employee_count:
+                from app.scraper.extractors.revenue_extractor import (
+                    estimate_revenue, extract_employee_count, extract_revenue,
+                )
+                if not company.estimated_revenue:
+                    rev, rev_src = extract_revenue(html)
+                    if rev:
+                        company.estimated_revenue = rev
+                        company.revenue_source = rev_src
+                if not company.employee_count:
+                    emp, emp_range = extract_employee_count(html)
+                    if emp:
+                        company.employee_count = emp
+                        if emp_range:
+                            company.employee_count_range = emp_range
+                if not company.estimated_revenue and company.employee_count:
+                    est_rev, est_src = estimate_revenue(
+                        company.employee_count, company.employee_count_range or "",
+                        company.industry or ""
+                    )
+                    if est_rev:
+                        company.estimated_revenue = est_rev
+                        company.revenue_source = est_src
+        return found
 
+    # Process companies in batches of 5 concurrently
+    batch_size = 5
+    for i in range(0, len(companies), batch_size):
+        await _check_job_status(db, job_id)
+        batch = companies[i:i + batch_size]
+        batch_results = await asyncio.gather(
+            *[_enrich_company_contacts(c) for c in batch],
+            return_exceptions=True,
+        )
+        for company, result in zip(batch, batch_results):
+            if isinstance(result, Exception):
+                continue
+            for c in result:
+                try:
+                    await contact_service.create_contact(db, ContactCreate(
+                        company_id=company.id,
+                        first_name=c.first_name, last_name=c.last_name,
+                        full_name=c.full_name, title=c.title,
+                        email=c.email, email_confidence=c.email_confidence,
+                        phone=c.phone, linkedin_url=c.linkedin_url,
+                        source=c.source, source_url=c.source_url,
+                    ))
+                    contacts_found += 1
+                except Exception:
+                    pass
+        await db.commit()
         await job_service.update_job_progress(db, job_id, contacts_found=contacts_found)
 
     await job_service.add_log(db, job_id, "info", f"Enrichment complete: {contacts_found} contacts")

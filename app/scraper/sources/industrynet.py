@@ -21,7 +21,7 @@ class IndustryNetScraper(BaseScraper):
         if not key_manager.has_keys:
             return []
 
-        search_query = f"site:industrynet.com/co/ {query} manufacturer"
+        search_query = f"site:industrynet.com/listing/ {query} manufacturer"
         data = await serper_search(search_query, num=num_results)
         if not data:
             return []
@@ -29,7 +29,7 @@ class IndustryNetScraper(BaseScraper):
         results = []
         for r in data.get("organic", []):
             link = r.get("link", "")
-            if not link or "/co/" not in link:
+            if not link or "/listing/" not in link:
                 continue
             results.append({
                 "url": link,

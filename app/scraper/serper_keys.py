@@ -111,7 +111,7 @@ class SerperKeyManager:
         return sum(b.get("credit", 0) for b in balances)
 
 
-async def serper_search(query: str, num: int = 10, gl: str = "us") -> dict | None:
+async def serper_search(query: str, num: int = 10, gl: str = "us", location: str = "") -> dict | None:
     """Make a Serper search request with automatic key rotation."""
     if not key_manager.has_keys:
         return None
@@ -123,10 +123,13 @@ async def serper_search(query: str, num: int = 10, gl: str = "us") -> dict | Non
         return None
 
     try:
+        payload = {"q": query, "num": num, "gl": gl}
+        if location:
+            payload["location"] = location
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.post(
                 "https://google.serper.dev/search",
-                json={"q": query, "num": num, "gl": gl},
+                json=payload,
                 headers={"X-API-KEY": key},
             )
             # Serper returns 400 "Not enough credits", 403, or 429 when exhausted

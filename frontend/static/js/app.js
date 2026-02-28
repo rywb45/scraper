@@ -240,3 +240,22 @@ function revenueSourceLabel(src) {
     };
     return labels[src] || src;
 }
+
+function formatRevenue(c) {
+    if (!c.estimated_revenue) return '<span class="rev-unknown">Unknown</span>';
+    const src = c.revenue_source || "";
+    let conf = "";
+    let cls = "";
+    if (src === "knowledge_graph") {
+        conf = "high";
+        cls = "rev-high";
+    } else if (src === "search_snippet" || src === "page_text") {
+        conf = "med";
+        cls = "rev-med";
+    } else if (src === "estimated") {
+        conf = "low";
+        cls = "rev-low";
+    }
+    const dot = conf ? `<span class="rev-dot ${cls}" title="${revenueSourceLabel(src)}"></span>` : "";
+    return `${dot}<strong>${escapeHtml(c.estimated_revenue)}</strong>`;
+}

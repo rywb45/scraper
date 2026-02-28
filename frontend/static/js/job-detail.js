@@ -12,6 +12,7 @@ document.addEventListener("DOMContentLoaded", () => {
         { key: "thomasnet", match: "Searching ThomasNet", label: "ThomasNet" },
         { key: "kompass", match: "Searching Kompass", label: "Kompass" },
         { key: "industrynet", match: "Searching IndustryNet", label: "IndustryNet" },
+        { key: "data_enrich", match: "Starting data enrichment", label: "Data Enrichment" },
         { key: "contacts", match: "Starting contact enrichment", label: "Contact Enrichment" },
         { key: "email", match: "Starting email pattern", label: "Email Patterns" },
     ];
@@ -22,7 +23,7 @@ document.addEventListener("DOMContentLoaded", () => {
         let currentPhase = null;
 
         for (const log of chronological) {
-            const ts = new Date(log.created_at);
+            const ts = parseUTC(log.created_at);
 
             for (const p of PHASES) {
                 if (log.message.includes(p.match)) {
@@ -47,7 +48,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
             if (currentPhase) {
                 if (log.message.startsWith("Found:")) currentPhase.companiesFound++;
-                if (log.message.includes("complete:") || log.message.includes("complete.") || log.message.includes("Enrichment complete") || log.message.includes("Email patterns:")) {
+                if (log.message.includes("complete:") || log.message.includes("complete.") || log.message.includes("enrichment complete") || log.message.includes("Enrichment complete") || log.message.includes("Email patterns:")) {
                     currentPhase.endTime = ts;
                     currentPhase.duration = (ts - currentPhase.startTime) / 1000;
                     currentPhase.status = "completed";
@@ -68,17 +69,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function formatDuration(seconds) {
         if (seconds == null) return "";
-        if (seconds < 60) return Math.round(seconds) + "s";
-        const m = Math.floor(seconds / 60);
-        const s = Math.round(seconds % 60);
-        if (m < 60) return m + "m " + s + "s";
-        const h = Math.floor(m / 60);
-        return h + "h " + (m % 60) + "m";
+        const totalSec = Math.round(seconds);
+        const h = Math.floor(totalSec / 3600);
+        const m = Math.floor((totalSec % 3600) / 60);
+        const s = totalSec % 60;
+        if (h > 0) return h + "h " + m + "m " + s + "s";
+        return m + "m " + s + "s";
+    }
+
+    function parseUTC(iso) {
+        if (!iso) return null;
+        return new Date(iso.endsWith("Z") ? iso : iso + "Z");
     }
 
     function formatElapsed(startIso) {
         if (!startIso) return "—";
-        const elapsed = (Date.now() - new Date(startIso).getTime()) / 1000;
+        const elapsed = (Date.now() - parseUTC(startIso).getTime()) / 1000;
         return formatDuration(elapsed);
     }
 
@@ -138,7 +144,7 @@ document.addEventListener("DOMContentLoaded", () => {
         let html = "";
         for (let i = 0; i < recent.length; i++) {
             const l = recent[i];
-            const time = new Date(l.created_at);
+            const time = parseUTC(l.created_at);
             const timeStr = time.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 
             let icon = "&#8226;";
@@ -197,7 +203,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (job.started_at) {
                 jobStartTime = job.started_at;
                 if (["completed", "failed", "cancelled"].includes(job.status) && job.completed_at) {
-                    const elapsed = (new Date(job.completed_at) - new Date(job.started_at)) / 1000;
+                    const elapsed = (parseUTC(job.completed_at) - parseUTC(job.started_at)) / 1000;
                     $("#js-elapsed").textContent = formatDuration(elapsed);
                     if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
                 } else {

@@ -614,6 +614,19 @@ legend {
 .badge-cancelled { background: var(--gray-bg); color: var(--gray); }
 .badge-source { background: var(--gray-bg); color: var(--text-secondary); }
 
+/* Revenue confidence */
+.rev-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    margin-right: 5px;
+    vertical-align: middle;
+}
+.rev-high { background: #22c55e; }
+.rev-med { background: #f59e0b; }
+.rev-low { background: #ef4444; }
+.rev-unknown { color: var(--gray); font-size: 0.85em; }
+
 /* ========== Progress Bar ========== */
 .progress-bar {
     background: var(--border-light);

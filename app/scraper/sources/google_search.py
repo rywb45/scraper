@@ -41,10 +41,10 @@ class GoogleSearchScraper(BaseScraper):
     def __init__(self):
         self.http = HttpClient()
 
-    async def search(self, query: str, num_results: int = 10) -> list[str]:
+    async def search(self, query: str, num_results: int = 10, location: str = "") -> list[str]:
         if settings.serp_api_provider == "serpapi":
             return await self._search_serpapi(query, num_results)
-        return await self._search_serper(query, num_results)
+        return await self._search_serper(query, num_results, location=location)
 
     async def _search_serpapi(self, query: str, num_results: int) -> list[str]:
         try:
@@ -68,8 +68,8 @@ class GoogleSearchScraper(BaseScraper):
         except Exception:
             return []
 
-    async def _search_serper(self, query: str, num_results: int) -> list[str]:
-        data = await serper_search(query, num=num_results)
+    async def _search_serper(self, query: str, num_results: int, location: str = "") -> list[str]:
+        data = await serper_search(query, num=num_results, location=location)
         if not data:
             return []
         urls = []

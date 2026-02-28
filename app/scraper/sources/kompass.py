@@ -21,7 +21,7 @@ class KompassScraper(BaseScraper):
         if not key_manager.has_keys:
             return []
 
-        search_query = f"site:kompass.com/company {query} manufacturer supplier USA"
+        search_query = f"site:kompass.com/c/ {query} manufacturer supplier USA"
         data = await serper_search(search_query, num=num_results)
         if not data:
             return []
@@ -29,7 +29,7 @@ class KompassScraper(BaseScraper):
         results = []
         for r in data.get("organic", []):
             link = r.get("link", "")
-            if not link or "/company/" not in link:
+            if not link or "/c/" not in link:
                 continue
             results.append({
                 "url": link,
