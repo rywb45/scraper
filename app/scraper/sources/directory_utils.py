@@ -30,12 +30,50 @@ def is_social_domain(domain: str) -> bool:
     return False
 
 
+_ADDRESS_START = re.compile(
+    r',\s*(?='
+    r'\d'
+    r'|#'
+    r'|Building\b'
+    r'|Block\b'
+    r'|Floor\b'
+    r'|Plot\b'
+    r'|Suite\b'
+    r'|Unit\b'
+    r'|P\.?O\.?\s*Box'
+    r'|[A-Z]-\d'
+    r')',
+    re.IGNORECASE,
+)
+_STREET_SUFFIX = re.compile(
+    r',\s+[\w\s]+\b(?:Street|Road|Drive|Avenue|Ave|Blvd|Boulevard|Lane|Way|Place|Rd|St|Dr|Ct|Circle|Highway|Hwy)\b.*$',
+    re.IGNORECASE,
+)
+
+
+def _strip_address(name: str) -> str:
+    """Remove address fragments from a company name.
+
+    Handles Kompass-style titles like 'Acme Corp, 123 Main Street'.
+    """
+    m = _ADDRESS_START.search(name)
+    if m:
+        name = name[:m.start()].strip()
+    m = _STREET_SUFFIX.search(name)
+    if m:
+        name = name[:m.start()].strip()
+    # Remove trailing ellipsis
+    name = re.sub(r'\.{2,}\s*$', '', name).strip()
+    return name
+
+
 def extract_name_from_title(title: str) -> str:
     """Extract company name from a directory search result title.
 
     Handles formats like:
       "Company Name: City, ST ZIP - Thomasnet"
       "Company Name - Supplier of ..."
+      "Company Name, 123 Some Street ..." (Kompass)
     """
     if not title:
         return ""
@@ -48,6 +86,8 @@ def extract_name_from_title(title: str) -> str:
         after = parts[1].strip()
         if re.match(r"[A-Z][a-z]+.*,\s*[A-Z]{2}", after):
             title = parts[0]
+    # Strip address fragments (Kompass embeds addresses in titles)
+    title = _strip_address(title)
     name = title.strip()
     return name[:200] if len(name) >= 2 else ""
 

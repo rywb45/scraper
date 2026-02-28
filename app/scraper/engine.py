@@ -596,10 +596,32 @@ async def _phase_email_patterns(db, job_id: int):
     await job_service.add_log(db, job_id, "info", f"Email patterns: generated {generated} guesses")
 
 
+_ADDRESS_START = re.compile(
+    r',\s*(?='
+    r'\d'
+    r'|#'
+    r'|Building\b'
+    r'|Block\b'
+    r'|Floor\b'
+    r'|Plot\b'
+    r'|Suite\b'
+    r'|Unit\b'
+    r'|P\.?O\.?\s*Box'
+    r'|[A-Z]-\d'
+    r')',
+    re.IGNORECASE,
+)
+_STREET_SUFFIX = re.compile(
+    r',\s+[\w\s]+\b(?:Street|Road|Drive|Avenue|Ave|Blvd|Boulevard|Lane|Way|Place|Rd|St|Dr|Ct|Circle|Highway|Hwy)\b.*$',
+    re.IGNORECASE,
+)
+
+
 def _clean_company_name(title: str) -> str:
     """Clean a company name from a Google search result title.
 
-    Strips common suffixes like ' | Company', ' - Home', ' - Official Site', etc.
+    Strips common suffixes like ' | Company', ' - Home', ' - Official Site',
+    and address fragments like ', 123 Main Street'.
     """
     if not title:
         return ""
@@ -613,6 +635,15 @@ def _clean_company_name(title: str) -> str:
             break
     # Remove trailing generic words
     title = re.sub(r"\s*(?:Home|Official Site|Homepage|Welcome)\s*$", "", title, flags=re.IGNORECASE).strip()
+    # Strip address fragments
+    m = _ADDRESS_START.search(title)
+    if m:
+        title = title[:m.start()].strip()
+    m = _STREET_SUFFIX.search(title)
+    if m:
+        title = title[:m.start()].strip()
+    # Remove trailing ellipsis
+    title = re.sub(r'\.{2,}\s*$', '', title).strip()
     return title[:200] if len(title) >= 2 else ""
 
 
