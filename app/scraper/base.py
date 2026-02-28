@@ -42,9 +42,17 @@ class BaseScraper(ABC):
     name: str = "base"
 
     @abstractmethod
-    async def search(self, query: str, num_results: int = 10) -> list[str]:
-        """Return a list of URLs matching the query."""
+    async def search(self, query: str, num_results: int = 10) -> list[dict]:
+        """Return a list of result dicts matching the query.
+
+        Each dict contains:
+            url: str - the result URL
+            title: str - the result title
+            snippet: str - the result snippet/description
+            domain: str - extracted domain from URL
+            knowledge_graph: dict | None - KG data from Serper (first result only)
+        """
 
     @abstractmethod
-    async def scrape_company(self, url: str) -> ScrapedCompany | None:
-        """Scrape company info from a URL."""
+    async def scrape_company(self, result: dict | str) -> ScrapedCompany | None:
+        """Scrape company info from a search result dict or URL string."""

@@ -1,12 +1,10 @@
 from app.industries.definitions import INDUSTRIES
 
-# Broad templates that work for any industry name — no keyword mapping required
+# Broad templates that work for any industry name — reduced from 5 to 3 (cut weakest performers)
 SEARCH_TEMPLATES = [
     '"{industry}" company {location} -wikipedia -fortune -NYSE -NASDAQ',
-    '"{industry}" supplier {location} small business',
     '"{industry}" manufacturer {location} LLC OR Inc',
-    '"{industry}" distributor company {location}',
-    '"{industry}" services company {location}',
+    '"{industry}" supplier {location} small business',
 ]
 
 # Extra templates for known industries — uses curated keywords for depth
@@ -15,11 +13,6 @@ KEYWORD_TEMPLATES = [
     '"{keyword}" supplier {location} -wikipedia',
     '"{keyword}" company {location} LLC OR Inc',
 ]
-
-DIRECTORY_QUERIES = {
-    "thomasnet": 'site:thomasnet.com/profile "{keyword}"',
-    "industrynet": 'site:industrynet.com "{keyword}"',
-}
 
 
 def generate_queries(industry_name: str, location: str = "") -> list[str]:
@@ -39,27 +32,13 @@ def generate_queries(industry_name: str, location: str = "") -> list[str]:
     # If we have curated data for this industry, add keyword-specific queries
     industry = INDUSTRIES.get(industry_name)
     if industry:
-        for keyword in industry.keywords[:6]:
+        # Cap keywords at 3 (was 6) — top keywords only
+        for keyword in industry.keywords[:3]:
             for template in KEYWORD_TEMPLATES:
                 queries.append(template.format(keyword=keyword, location=loc))
 
-        # Sub-industry queries
-        for sub in industry.sub_industries[:4]:
+        # Cap sub-industry queries at 2 (was 4)
+        for sub in industry.sub_industries[:2]:
             queries.append(f'"{sub}" company {loc} -wikipedia')
-
-        # Directory queries using keywords
-        for keyword in industry.keywords[:3]:
-            for tpl in DIRECTORY_QUERIES.values():
-                q = tpl.format(keyword=keyword)
-                if location:
-                    q += f" {location}"
-                queries.append(q)
-    else:
-        # Custom/unknown industry — use the name itself for directory searches
-        for tpl in DIRECTORY_QUERIES.values():
-            q = tpl.format(keyword=industry_name)
-            if location:
-                q += f" {location}"
-            queries.append(q)
 
     return queries

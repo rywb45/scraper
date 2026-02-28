@@ -41,12 +41,12 @@ class GoogleSearchScraper(BaseScraper):
     def __init__(self):
         self.http = HttpClient()
 
-    async def search(self, query: str, num_results: int = 10, location: str = "") -> list[str]:
+    async def search(self, query: str, num_results: int = 10, location: str = "") -> list[dict]:
         if settings.serp_api_provider == "serpapi":
             return await self._search_serpapi(query, num_results)
         return await self._search_serper(query, num_results, location=location)
 
-    async def _search_serpapi(self, query: str, num_results: int) -> list[str]:
+    async def _search_serpapi(self, query: str, num_results: int) -> list[dict]:
         try:
             from serpapi import GoogleSearch
 
@@ -58,26 +58,44 @@ class GoogleSearchScraper(BaseScraper):
                 "hl": "en",
             }
             search = GoogleSearch(params)
-            results = search.get_dict()
-            urls = []
-            for r in results.get("organic_results", []):
+            data = search.get_dict()
+            results = []
+            for r in data.get("organic_results", []):
                 link = r.get("link", "")
                 if link and self._is_company_url(link):
-                    urls.append(link)
-            return urls[:num_results]
+                    parsed = urlparse(link)
+                    domain = parsed.netloc.lower().removeprefix("www.")
+                    results.append({
+                        "url": link,
+                        "title": r.get("title", ""),
+                        "snippet": r.get("snippet", ""),
+                        "domain": domain,
+                        "knowledge_graph": None,
+                    })
+            return results[:num_results]
         except Exception:
             return []
 
-    async def _search_serper(self, query: str, num_results: int, location: str = "") -> list[str]:
+    async def _search_serper(self, query: str, num_results: int, location: str = "") -> list[dict]:
         data = await serper_search(query, num=num_results, location=location)
         if not data:
             return []
-        urls = []
+
+        kg = data.get("knowledgeGraph") or None
+        results = []
         for r in data.get("organic", []):
             link = r.get("link", "")
             if link and self._is_company_url(link):
-                urls.append(link)
-        return urls[:num_results]
+                parsed = urlparse(link)
+                domain = parsed.netloc.lower().removeprefix("www.")
+                results.append({
+                    "url": link,
+                    "title": r.get("title", ""),
+                    "snippet": r.get("snippet", ""),
+                    "domain": domain,
+                    "knowledge_graph": kg if not results else None,  # attach KG to first result only
+                })
+        return results[:num_results]
 
     def _is_company_url(self, url: str) -> bool:
         parsed = urlparse(url)
@@ -106,7 +124,8 @@ class GoogleSearchScraper(BaseScraper):
 
         return True
 
-    async def scrape_company(self, url: str) -> ScrapedCompany | None:
+    async def scrape_company(self, result: dict | str) -> ScrapedCompany | None:
+        url = result["url"] if isinstance(result, dict) else result
         resp = await self.http.get(url)
         if not resp:
             return None

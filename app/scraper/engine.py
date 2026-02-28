@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 from urllib.parse import urlparse
 
 import httpx
@@ -43,39 +44,102 @@ _STATE_NAMES = {
 _NAME_TO_ABBREV = {v: k for k, v in _STATE_NAMES.items()}
 
 
+_CITY_ALIASES = {
+    "nyc": ("new york", "NY"),
+    "new york city": ("new york", "NY"),
+    "la": ("los angeles", "CA"),
+    "sf": ("san francisco", "CA"),
+    "philly": ("philadelphia", "PA"),
+    "dc": ("washington", "DC"),
+    "chi": ("chicago", "IL"),
+}
+
+
+def _normalize_location(requested: str) -> tuple[set[str], set[str]]:
+    """Parse a location filter into sets of matching state abbreviations and city names.
+    Handles: 'New York', 'NY', 'New York, New Jersey', 'Dallas, TX',
+    'Chicago IL', 'New York City', 'NYC'."""
+    if not requested:
+        return set(), set()
+
+    import re
+    states = set()
+    cities = set()
+
+    # Split on comma to handle multiple locations
+    parts = [p.strip() for p in requested.split(",") if p.strip()]
+
+    for part in parts:
+        part_lower = part.lower().strip()
+        part_upper = part.upper().strip()
+
+        # Check city aliases first (NYC, LA, etc.)
+        if part_lower in _CITY_ALIASES:
+            city_name, st = _CITY_ALIASES[part_lower]
+            cities.add(city_name)
+            states.add(st)
+            continue
+
+        # Check if it's a state abbreviation
+        if part_upper in _STATE_NAMES:
+            states.add(part_upper)
+            continue
+
+        # Check if it's a full state name
+        if part_lower in _NAME_TO_ABBREV:
+            states.add(_NAME_TO_ABBREV[part_lower])
+            continue
+
+        # Check "City ST" format (e.g., "Chicago IL")
+        m = re.match(r"(.+?)\s+([A-Za-z]{2})$", part.strip())
+        if m:
+            st = m.group(2).upper()
+            if st in _STATE_NAMES:
+                states.add(st)
+                cities.add(m.group(1).strip().lower())
+                continue
+
+        # Otherwise treat as a city name
+        cities.add(part_lower)
+
+    return states, cities
+
+
 def _location_matches(company_state: str, company_city: str, requested_location: str) -> bool:
     """Check if a company's location matches the requested location filter.
-    Returns True if no location filter, or if the company matches, or if
-    the company has no location data (benefit of the doubt)."""
+    - No location filter → keep
+    - Company has a confirmed WRONG state → reject
+    - Company has matching state or city → keep
+    - Company has no location data → keep (search was geo-targeted)"""
     if not requested_location:
         return True
-    # No location data on the company — keep it, don't discard unknowns
-    if not company_state and not company_city:
+
+    target_states, target_cities = _normalize_location(requested_location)
+    state = (company_state or "").strip().upper()
+    city = (company_city or "").strip().lower()
+
+    # Reject garbage city/state data
+    if city and len(city) > 30:
+        city = ""
+    if state and len(state) != 2:
+        state = ""
+
+    # No location data — keep it, search was already geo-targeted
+    if not state and not city:
         return True
 
-    loc = requested_location.lower().strip()
-    state = (company_state or "").lower().strip()
-    city = (company_city or "").lower().strip()
+    # Company has a state — it must match (reject confirmed wrong states)
+    if state and target_states:
+        return state in target_states
 
-    # Direct match on state abbreviation or name
-    if state:
-        state_name = _STATE_NAMES.get(state.upper(), state)
-        if loc in (state, state_name, state.upper()):
-            return True
-        # Check if location input is the full state name
-        if loc in _NAME_TO_ABBREV and _NAME_TO_ABBREV[loc] == state.upper():
-            return True
+    # No target states parsed (city-only filter like "Dallas")
+    if city and target_cities:
+        for tc in target_cities:
+            if tc == city or tc in city or city in tc:
+                return True
+        return False
 
-    # Direct match on city
-    if city and loc in city:
-        return True
-
-    # "City, ST" or "City ST" format in the requested location
-    if city and state:
-        if city in loc or state in loc or _STATE_NAMES.get(state.upper(), "") in loc:
-            return True
-
-    return False
+    return True
 
 _active_jobs: dict[int, asyncio.Task] = {}
 
@@ -178,7 +242,7 @@ async def _phase_discovery(db, job_id: int, industries: list[str], sources: list
     errors = 0
     seen_domains = set()
 
-    # Phase 1: Google Search (Serper API)
+    # Phase 1: Google Search (Serper API) — uses rich results to skip HTTP fetches
     if run_google:
         for industry in industries:
             await _check_job_status(db, job_id)
@@ -189,42 +253,70 @@ async def _phase_discovery(db, job_id: int, industries: list[str], sources: list
                 await _check_job_status(db, job_id)
 
                 try:
-                    urls = await scraper.search(query, num_results=10, location=location)
-                    if not urls:
+                    results = await scraper.search(query, num_results=10, location=location)
+                    if not results:
                         continue
 
-                    # Deduplicate by domain before scraping
-                    new_urls = []
-                    for url in urls:
-                        domain = urlparse(url).netloc.lower().removeprefix("www.")
+                    # Deduplicate by domain
+                    new_results = []
+                    for r in results:
+                        domain = r.get("domain", "")
+                        if not domain:
+                            domain = urlparse(r["url"]).netloc.lower().removeprefix("www.")
                         if domain not in seen_domains:
                             seen_domains.add(domain)
-                            new_urls.append(url)
+                            new_results.append(r)
 
-                    total_urls += len(new_urls)
+                    total_urls += len(new_results)
                     await job_service.update_job_progress(db, job_id, total_urls=total_urls)
 
-                    for url in new_urls:
+                    for r in new_results:
                         await _check_job_status(db, job_id)
                         try:
-                            company_data = await scraper.scrape_company(url)
+                            # Build ScrapedCompany directly from search result — no HTTP fetch
+                            domain = r.get("domain", "")
+                            if not domain:
+                                domain = urlparse(r["url"]).netloc.lower().removeprefix("www.")
+                            url = r["url"]
+                            title = r.get("title", "")
+                            snippet = r.get("snippet", "")
+                            kg = r.get("knowledge_graph")
+
+                            # Clean company name from title
+                            name = _clean_company_name(title)
+                            if not name or not domain:
+                                processed += 1
+                                await job_service.update_job_progress(db, job_id, processed_urls=processed)
+                                continue
+
+                            # Skip if domain already saved
+                            if await company_service.get_company_by_domain(db, domain):
+                                processed += 1
+                                await job_service.update_job_progress(db, job_id, processed_urls=processed)
+                                continue
+
+                            company_data = ScrapedCompany(
+                                name=name,
+                                domain=domain,
+                                website=f"{urlparse(url).scheme}://{urlparse(url).netloc}",
+                                industry=industry,
+                                description=snippet,
+                                source="google_search",
+                                source_url=url,
+                            )
+
+                            # Pre-populate from Knowledge Graph if available
+                            if kg:
+                                _apply_kg_to_company(kg, company_data)
+
                             processed += 1
-
-                            if company_data and company_data.name and company_data.domain:
-                                # Skip if domain already saved
-                                if await company_service.get_company_by_domain(db, company_data.domain):
-                                    await job_service.update_job_progress(db, job_id, processed_urls=processed)
+                            saved = await _save_company(db, job_id, company_data, kg_data=kg)
+                            if saved:
+                                if location and not _location_matches(saved.state, saved.city, location):
+                                    await db.delete(saved)
+                                    await db.commit()
                                     continue
-
-                                company_data.industry = industry
-                                saved = await _save_company(db, job_id, company_data)
-                                if saved:
-                                    # Check location filter after enrichment
-                                    if location and not _location_matches(saved.state, saved.city, location):
-                                        await db.delete(saved)
-                                        await db.commit()
-                                        continue
-                                    companies_found += 1
+                                companies_found += 1
 
                             await job_service.update_job_progress(
                                 db, job_id,
@@ -235,7 +327,7 @@ async def _phase_discovery(db, job_id: int, industries: list[str], sources: list
                         except Exception as e:
                             errors += 1
                             processed += 1
-                            await job_service.add_log(db, job_id, "error", f"Scrape error: {e}", url=url)
+                            await job_service.add_log(db, job_id, "error", f"Scrape error: {e}", url=r.get("url", ""))
                             await job_service.update_job_progress(
                                 db, job_id, processed_urls=processed, errors_count=errors
                             )
@@ -504,7 +596,59 @@ async def _phase_email_patterns(db, job_id: int):
     await job_service.add_log(db, job_id, "info", f"Email patterns: generated {generated} guesses")
 
 
-async def _save_company(db, job_id: int, data: ScrapedCompany):
+def _clean_company_name(title: str) -> str:
+    """Clean a company name from a Google search result title.
+
+    Strips common suffixes like ' | Company', ' - Home', ' - Official Site', etc.
+    """
+    if not title:
+        return ""
+    # Remove common suffixes
+    for sep in [" | ", " - ", " — ", " – "]:
+        if sep in title:
+            parts = title.split(sep)
+            # Take the first part unless it's very short
+            if len(parts[0].strip()) >= 2:
+                title = parts[0].strip()
+            break
+    # Remove trailing generic words
+    title = re.sub(r"\s*(?:Home|Official Site|Homepage|Welcome)\s*$", "", title, flags=re.IGNORECASE).strip()
+    return title[:200] if len(title) >= 2 else ""
+
+
+def _apply_kg_to_company(kg: dict, company: ScrapedCompany):
+    """Apply Knowledge Graph data to a ScrapedCompany, filling in missing fields."""
+    from app.scraper.extractors.data_enricher import (
+        _extract_from_kg, _count_to_range,
+    )
+
+    result = {
+        "estimated_revenue": "",
+        "revenue_source": "",
+        "employee_count": None,
+        "employee_count_range": "",
+        "city": "",
+        "state": "",
+    }
+    _extract_from_kg(kg, result)
+
+    if not company.estimated_revenue and result["estimated_revenue"]:
+        company.estimated_revenue = result["estimated_revenue"]
+        company.revenue_source = result["revenue_source"]
+    if not company.employee_count and result["employee_count"]:
+        company.employee_count = result["employee_count"]
+        company.employee_count_range = result["employee_count_range"]
+    if not company.state and result["state"]:
+        company.state = result["state"]
+        company.city = result["city"]
+
+    # Use KG description if better than snippet
+    kg_desc = kg.get("description", "")
+    if kg_desc and (not company.description or len(kg_desc) > len(company.description)):
+        company.description = kg_desc
+
+
+async def _save_company(db, job_id: int, data: ScrapedCompany, kg_data: dict | None = None):
     company = await company_service.create_company(db, CompanyCreate(
         name=data.name, domain=data.domain, website=data.website,
         industry=data.industry, sub_industry=data.sub_industry,
@@ -520,14 +664,14 @@ async def _save_company(db, job_id: int, data: ScrapedCompany):
 
     # Enrich immediately — revenue, employees, location via Google search
     try:
-        await _enrich_single_company(db, job_id, company)
+        await _enrich_single_company(db, job_id, company, kg_data=kg_data)
     except Exception as e:
         await job_service.add_log(db, job_id, "warning", f"Enrich failed for {data.name}: {e}")
 
     return company
 
 
-async def _enrich_single_company(db, job_id: int, company):
+async def _enrich_single_company(db, job_id: int, company, kg_data: dict | None = None):
     """Enrich a single company with revenue, employee count, and location right after saving."""
     needs_revenue = not company.estimated_revenue
     needs_employees = not company.employee_count
@@ -543,7 +687,7 @@ async def _enrich_single_company(db, job_id: int, company):
     ]))
     await job_service.add_log(db, job_id, "info", f"Enriching {company.name} (need: {needed})")
 
-    data = await enrich_company(company.name, company.domain)
+    data = await enrich_company(company.name, company.domain, kg_data=kg_data)
 
     updated = False
     if needs_revenue and data["estimated_revenue"]:

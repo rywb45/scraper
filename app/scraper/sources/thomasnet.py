@@ -5,6 +5,13 @@ from app.scraper.base import BaseScraper, ScrapedCompany
 from app.scraper.http_client import HttpClient
 from app.scraper.extractors.company_extractor import extract_company
 from app.scraper.serper_keys import key_manager, serper_search
+from app.scraper.sources.directory_utils import (
+    extract_domain_from_snippet,
+    extract_location_from_snippet,
+    extract_name_from_title,
+    find_company_website,
+    is_social_domain,
+)
 
 
 class ThomasNetScraper(BaseScraper):
@@ -47,59 +54,56 @@ class ThomasNetScraper(BaseScraper):
         then scrapes it with company_extractor for full details.
         """
         if isinstance(result, str):
-            # Legacy: called with just a URL
             return None
 
         title = result.get("title", "")
         snippet = result.get("snippet", "")
         source_url = result.get("url", "")
 
-        # Extract company name from title like "Company Name - Supplier of ..."
-        name = _extract_name_from_title(title)
+        name = extract_name_from_title(title)
         if not name:
             return None
 
-        # Try to find the company's own website from the ThomasNet profile page
-        # ThomasNet pages are behind Cloudflare, so try but don't depend on it
-        company_website = None
-        company_domain = None
+        # Step 1: Try to extract domain from the snippet (free — no API call)
+        company_domain, company_website = extract_domain_from_snippet(snippet, "thomasnet.com")
 
-        try:
-            resp = await self.http.get(source_url)
-            if resp and resp.text:
-                # Look for external website links in the page
-                website_match = re.search(
-                    r'(?:href=["\'])?(https?://(?!(?:www\.)?thomasnet\.com)[a-zA-Z0-9.-]+\.[a-z]{2,}[^"\'<>\s]*)',
-                    resp.text,
-                )
-                if website_match:
-                    url = website_match.group(1)
-                    parsed = urlparse(url)
-                    domain = parsed.netloc.lower().removeprefix("www.")
-                    if domain and "." in domain and not _is_social_domain(domain):
-                        company_website = f"{parsed.scheme}://{parsed.netloc}"
-                        company_domain = domain
-        except Exception:
-            pass
-
-        # If we couldn't get the website from the profile, try Google
+        # Step 2: If snippet didn't have it, try scraping the profile page
         if not company_domain:
-            company_domain, company_website = await _find_company_website(name)
+            try:
+                resp = await self.http.get(source_url)
+                if resp and resp.text:
+                    website_match = re.search(
+                        r'(?:href=["\'])?(https?://(?!(?:www\.)?thomasnet\.com)[a-zA-Z0-9.-]+\.[a-z]{2,}[^"\'<>\s]*)',
+                        resp.text,
+                    )
+                    if website_match:
+                        url = website_match.group(1)
+                        parsed = urlparse(url)
+                        domain = parsed.netloc.lower().removeprefix("www.")
+                        if domain and "." in domain and not is_social_domain(domain):
+                            company_website = f"{parsed.scheme}://{parsed.netloc}"
+                            company_domain = domain
+            except Exception:
+                pass
+
+        # Step 3: Last resort — Google search (costs 1 API call)
+        if not company_domain:
+            company_domain, company_website = await find_company_website(name)
 
         if not company_domain:
             return None
 
-        # Now scrape the company's actual website
         company = ScrapedCompany(
             name=name,
             domain=company_domain,
             website=company_website or "",
+            description=snippet,  # Pre-populate from search snippet
             source="thomasnet",
             source_url=source_url,
         )
 
-        # Extract location from snippet (ThomasNet often shows "City, ST" in snippets)
-        city, state = _extract_location_from_snippet(snippet)
+        # Extract location from snippet
+        city, state = extract_location_from_snippet(snippet)
         if city:
             company.city = city
         if state:
@@ -112,7 +116,6 @@ class ThomasNetScraper(BaseScraper):
                 if resp and resp.text:
                     scraped = extract_company(company_website, resp.text)
                     if scraped:
-                        # Merge: keep ThomasNet source but use website data
                         if scraped.description:
                             company.description = scraped.description
                         if scraped.phone:
@@ -134,76 +137,3 @@ class ThomasNetScraper(BaseScraper):
                 pass
 
         return company
-
-
-def _extract_name_from_title(title: str) -> str:
-    """Extract company name from a ThomasNet search result title.
-
-    Handles formats like:
-      "Company Name: City, ST ZIP - Thomasnet"
-      "Company Name - Supplier of ..."
-    """
-    if not title:
-        return ""
-    # Split on " - Thomasnet" or similar suffixes first
-    for sep in [" - ", " | ", " — ", " – "]:
-        if sep in title:
-            title = title.split(sep)[0]
-            break
-    # Remove trailing location like ": City, ST ZIP" or ": City, ST"
-    if ": " in title:
-        parts = title.split(": ", 1)
-        # Check if the part after colon looks like a location (starts with capital, has comma+state)
-        after = parts[1].strip()
-        if re.match(r"[A-Z][a-z]+.*,\s*[A-Z]{2}", after):
-            title = parts[0]
-    name = title.strip()
-    return name[:200] if len(name) >= 2 else ""
-
-
-def _extract_location_from_snippet(snippet: str) -> tuple[str, str]:
-    """Try to extract city, state from a snippet."""
-    US_STATES = {
-        "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
-        "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
-        "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
-        "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
-        "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC",
-    }
-    match = re.search(r"([A-Z][a-z]+(?:\s[A-Z][a-z]+)*),\s*([A-Z]{2})\b", snippet)
-    if match and match.group(2) in US_STATES:
-        return match.group(1).strip(), match.group(2)
-    return "", ""
-
-
-async def _find_company_website(name: str) -> tuple[str, str]:
-    """Use a quick Google search to find the company's website."""
-    data = await serper_search(f"{name} official website", num=3)
-    if not data:
-        return "", ""
-    for r in data.get("organic", []):
-        link = r.get("link", "")
-        if not link:
-            continue
-        parsed = urlparse(link)
-        domain = parsed.netloc.lower().removeprefix("www.")
-        if domain and "." in domain and not _is_social_domain(domain):
-            return domain, f"{parsed.scheme}://{parsed.netloc}"
-    return "", ""
-
-
-SOCIAL_DOMAINS = {
-    "wikipedia.org", "youtube.com", "facebook.com", "twitter.com",
-    "linkedin.com", "instagram.com", "reddit.com", "yelp.com",
-    "indeed.com", "glassdoor.com", "bbb.org", "crunchbase.com",
-    "thomasnet.com", "kompass.com", "industrynet.com",
-    "bloomberg.com", "reuters.com", "forbes.com",
-    "amazon.com", "ebay.com", "google.com", "yahoo.com",
-}
-
-
-def _is_social_domain(domain: str) -> bool:
-    for d in SOCIAL_DOMAINS:
-        if domain == d or domain.endswith(f".{d}"):
-            return True
-    return False

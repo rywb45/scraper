@@ -78,8 +78,12 @@ async def _do_search(query: str, all_text_ref: list, kg_data: dict):
         pass
 
 
-async def enrich_company(company_name: str, domain: str) -> dict:
-    """Search Google for company info and return enrichment data."""
+async def enrich_company(company_name: str, domain: str, kg_data: dict | None = None) -> dict:
+    """Search Google for company info and return enrichment data.
+
+    If kg_data is provided (from a prior search's Knowledge Graph), it will be
+    used first — potentially skipping the first Serper search entirely.
+    """
     result = {
         "estimated_revenue": "",
         "revenue_source": "",
@@ -89,20 +93,31 @@ async def enrich_company(company_name: str, domain: str) -> dict:
         "state": "",
     }
 
+    # Apply pre-collected KG data first (free — no API call)
+    if kg_data:
+        _extract_from_kg(kg_data, result)
+
+    # If KG data filled all fields, skip searching entirely
+    has_revenue = bool(result["estimated_revenue"])
+    has_employees = bool(result["employee_count"])
+    has_state = bool(result["state"])
+    if has_revenue and has_employees and has_state:
+        return result
+
     from app.scraper.serper_keys import key_manager
     if not key_manager.has_keys:
         return result
 
     all_text = ""
-    kg_data = {}
+    search_kg = {}
 
-    # First search — comprehensive
-    await _do_search(f'"{company_name}" revenue employees headquarters', all_text_ref := [""], kg_data)
+    # First search — only if we still need data
+    await _do_search(f'"{company_name}" revenue employees headquarters', all_text_ref := [""], search_kg)
     all_text = all_text_ref[0]
 
-    # Extract from knowledge graph first
-    if kg_data:
-        _extract_from_kg(kg_data, result)
+    # Extract from search KG
+    if search_kg:
+        _extract_from_kg(search_kg, result)
 
     # Fill from snippets
     if not result["estimated_revenue"]:
